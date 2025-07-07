@@ -12,18 +12,18 @@ import (
 )
 
 type openInterestRecord struct {
-	symbol globexCode
+	symbol GlobexCode
 	close SerializableDecimal
 	openInterest int
 }
 
 type intradayKey struct {
-	symbol globexCode
+	symbol GlobexCode
 	timestamp time.Time
 }
 
 type openInterestMap map[time.Time][]openInterestRecord
-type dailyGlobexMap map[time.Time]globexCode
+type dailyGlobexMap map[time.Time]GlobexCode
 type intradayRecordsMap map[intradayKey]SerializableDecimal
 
 func Generate() {
@@ -121,7 +121,7 @@ func getMomentum(
 	lagHours int,
 	timestamp time.Time,
 	close SerializableDecimal,
-	symbol globexCode,
+	symbol GlobexCode,
 	intradayRecords intradayRecordsMap,
 ) *float64 {
 	offsetTimestamp := getAdjustedTimestamp(-offsetHours, timestamp)
@@ -158,7 +158,7 @@ func getReturns(
 	horizonHours int,
 	timestamp time.Time,
 	close SerializableDecimal,
-	symbol globexCode,
+	symbol GlobexCode,
 	intradayRecords intradayRecordsMap,
 	asset *Asset,
 ) *int {
@@ -220,8 +220,14 @@ func readDailyRecords(asset Asset) openInterestMap {
 	columns := []string{"symbol", "time", "close", "open_interest"}
 	openIntRecords := openInterestMap{}
 	callback := func(values []string) {
-		symbol := globexFromString(values[0])
-		date := getDate(values[1])
+		symbol, err := parseGlobex(values[0])
+		if err != nil {
+			log.Fatal(err)
+		}
+		date, err := getDate(values[1])
+		if err != nil {
+			log.Fatal(err)
+		}
 		closeDecimal := getDecimal(values[2], path)
 		close := SerializableDecimal(closeDecimal)
 		openInterestString := values[3]
@@ -245,7 +251,10 @@ func readIntradayRecords(asset Asset) intradayRecordsMap {
 	columns := []string{"symbol", "time", "close"}
 	recordsMap := intradayRecordsMap{}
 	callback := func(values []string) {
-		symbol := globexFromString(values[0])
+		symbol, err := parseGlobex(values[0])
+		if err != nil {
+			log.Fatal(err)
+		}
 		timestamp := getTime(values[1])
 		close := getDecimal(values[2], path)
 		key := intradayKey{

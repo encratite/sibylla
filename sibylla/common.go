@@ -2,6 +2,7 @@ package sibylla
 
 import (
 	"encoding/csv"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -13,12 +14,12 @@ import (
 const dateLayout = "2006-01-02"
 const timestampLayout = "2006-01-02 15:04"
 
-func getDate(dateString string) time.Time {
+func getDate(dateString string) (time.Time, error) {
 	date, err := time.Parse(dateLayout, dateString)
 	if err != nil {
-		log.Fatalf("Failed to parse date string \"%s\": %v", dateString, err)
+		return time.Time{}, fmt.Errorf("failed to parse date string \"%s\": %v", dateString, err)
 	}
-	return date
+	return date, nil
 }
 
 func getTime(timeString string) time.Time {

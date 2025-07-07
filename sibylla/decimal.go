@@ -17,7 +17,3 @@ func (d *SerializableDecimal) UnmarshalYAML(value *yaml.Node) error {
 	d.Decimal = decimalValue
 	return nil
 }
-
-func (d SerializableDecimal) MarshalYAML() (interface{}, error) {
-	return d.Decimal.String(), nil
-}
