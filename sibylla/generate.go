@@ -17,42 +17,62 @@ func Generate() {
 }
 
 func processAsset(asset Asset) {
-	openInterestRecords := readOpenIntRecords(asset)
-	dailyRecords := dailyRecordsMap{}
-	for date, records := range openInterestRecords {
+	openIntRecords := readDailyRecords(asset)
+	dailyGlobexRecords := dailyGlobexMap{}
+	dailyRecords := []dailyRecord{}
+	for date, records := range openIntRecords {
 		maxRecord := getMaxOpenIntRecord(records)
-		newRecord := dailyRecord{
-			symbol: maxRecord.symbol,
+		dailyGlobexRecords[date] = maxRecord.symbol
+		dailyRecord := dailyRecord{
+			date: date,
 			close: maxRecord.close,
 		}
-		dailyRecords[date] = newRecord
+		dailyRecords = append(dailyRecords, dailyRecord)
 	}
 	intradayRecords := readIntradayRecords(asset)
 	intradayTimestamps := btree.NewG(32, timeLess)
 	for key := range intradayRecords {
 		intradayTimestamps.ReplaceOrInsert(key.timestamp)
 	}
+	archive := serializedArchive{
+		symbol: asset.Symbol,
+		dailyRecords: dailyRecords,
+	}
 	intradayTimestamps.Ascend(func(timestamp time.Time) bool {
 		date := time.Date(timestamp.Year(), timestamp.Month(), timestamp.Day(), 0, 0, 0, 0, timestamp.Location())
-		record, exists := dailyRecords[date]
+		symbol, exists := dailyGlobexRecords[date]
 		if !exists {
-			log.Fatalf("Missing daily record for date %s for symbol %s", getDateString(date), asset.getBarchartSymbol())
+			// There are some faulty intraday records for which no corresponding daily record exists
+			// Skip it
+			return true
 		}
 		key := intradayKey{
-			symbol: record.symbol,
+			symbol: symbol,
 			timestamp: timestamp,
 		}
 		close, exists := intradayRecords[key]
 		if !exists {
 			return true
 		}
-		momentum8 := getMomentum(8, 0, timestamp, close, record.symbol, intradayRecords)
-		momentum24 := getMomentum(hoursPerDay, 0, timestamp, close, record.symbol, intradayRecords)
-		momentum24_lag := getMomentum(hoursPerDay, hoursPerDay, timestamp, close, record.symbol, intradayRecords)
-		momentum48 := getMomentum(2 * hoursPerDay, 0, timestamp, close, record.symbol, intradayRecords)
-		returns24 := getReturns(hoursPerDay, timestamp, close, record.symbol, intradayRecords, &asset)
-		returns48 := getReturns(2 * hoursPerDay, timestamp, close, record.symbol, intradayRecords, &asset)
-		returns72 := getReturns(3 * hoursPerDay, timestamp, close, record.symbol, intradayRecords, &asset)
+		momentumHelper := func (offsetHours, lagHours int) optionalFeature {
+			return getMomentum(offsetHours, lagHours, timestamp, close, symbol, intradayRecords)
+		}
+		returnsHelper := func (horizonHours int) optionalReturns {
+			return getReturns(horizonHours, timestamp, close, symbol, intradayRecords, &asset)
+		}
+		features := featureRecord{
+			timestamp: timestamp,
+			momentum8: momentumHelper(8, 0),
+			momentum24: momentumHelper(hoursPerDay, 0),
+			momentum24_lag: momentumHelper(hoursPerDay, hoursPerDay),
+			momentum48: momentumHelper(2 * hoursPerDay, 0),
+			returns24: returnsHelper(hoursPerDay),
+			returns48: returnsHelper(2 * hoursPerDay),
+			returns72: returnsHelper(3 * hoursPerDay),
+		}
+		if features.includeRecord() {
+			archive.intradayRecords = append(archive.intradayRecords, features)
+		}
 		return true
 	})
 }
@@ -173,28 +193,29 @@ func getMaxOpenIntRecord(records []openInterestRecord) openInterestRecord {
 	return max
 }
 
-func readOpenIntRecords(asset Asset) openInterestMap {
+func readDailyRecords(asset Asset) openInterestMap {
 	path := getBarchartCsvPath(asset, "D1")
 	columns := []string{"symbol", "time", "close", "open_interest"}
-	dailyRecords := openInterestMap{}
+	openIntRecords := openInterestMap{}
 	callback := func(values []string) {
 		symbol := globexFromString(values[0])
 		date := getDate(values[1])
-		close := getDecimal(values[2], path)
+		closeDecimal := getDecimal(values[2], path)
+		close := serializableDecimal(closeDecimal)
 		openInterestString := values[3]
 		openInterest, err := strconv.Atoi(openInterestString)
 		if err != nil {
 			log.Fatalf("Failed to parse open interest value \"%s\" in CSV file (%s): %v", openInterestString, path, err)
 		}
-		record := openInterestRecord{
+		openIntRecord := openInterestRecord{
 			symbol: symbol,
-			close: serializableDecimal(close),
+			close: close,
 			openInterest: openInterest,
 		}
-		dailyRecords[date] = append(dailyRecords[date], record)
+		openIntRecords[date] = append(openIntRecords[date], openIntRecord)
 	}
 	readCsv(path, columns, callback)
-	return dailyRecords
+	return openIntRecords
 }
 
 func readIntradayRecords(asset Asset) intradayRecordsMap {

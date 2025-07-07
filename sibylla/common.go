@@ -88,7 +88,7 @@ func readCsv(path string, columns []string, callback func([]string)) {
 		}
 		indexMap = append(indexMap, index)
 	}
-	callbackColumns := make([]string, 0, len(columns))
+	callbackColumns := make([]string, len(columns))
 	for {
 		record, err := reader.Read()
 		if err == io.EOF {

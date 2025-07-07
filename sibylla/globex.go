@@ -27,9 +27,9 @@ func globexFromString(symbol string) globexCode {
 		log.Fatalf("Failed to convert year string \"%s\" to integer: %v", yearString, err)
 	}
 	if year < 70 {
-		year += 1900
-	} else {
 		year += 2000
+	} else {
+		year += 1900
 	}
 	output := globexCode{
 		root: root,
