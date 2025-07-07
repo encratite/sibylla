@@ -5,11 +5,11 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-type serializableDecimal struct {
+type SerializableDecimal struct {
 	decimal.Decimal
 }
 
-func (d *serializableDecimal) UnmarshalYAML(value *yaml.Node) error {
+func (d *SerializableDecimal) UnmarshalYAML(value *yaml.Node) error {
 	decimalValue, err := decimal.NewFromString(value.Value)
 	if err != nil {
 		return err
@@ -18,6 +18,6 @@ func (d *serializableDecimal) UnmarshalYAML(value *yaml.Node) error {
 	return nil
 }
 
-func (d serializableDecimal) MarshalYAML() (interface{}, error) {
+func (d SerializableDecimal) MarshalYAML() (interface{}, error) {
 	return d.Decimal.String(), nil
 }

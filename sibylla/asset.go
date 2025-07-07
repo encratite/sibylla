@@ -6,11 +6,11 @@ type Asset struct {
 	Name string `yaml:"name"`
 	LegacyCutoff string `yaml:"legacyCutoff"`
 	Currency string `yaml:"currency"`
-	TickSize serializableDecimal `yaml:"tickSize"`
-	TickValue serializableDecimal `yaml:"tickValue"`
-	Margin serializableDecimal `yaml:"margin"`
-	BrokerFee serializableDecimal `yaml:"brokerFee"`
-	ExchangeFee serializableDecimal `yaml:"exchangeFee"`
+	TickSize SerializableDecimal `yaml:"tickSize"`
+	TickValue SerializableDecimal `yaml:"tickValue"`
+	Margin SerializableDecimal `yaml:"margin"`
+	BrokerFee SerializableDecimal `yaml:"brokerFee"`
+	ExchangeFee SerializableDecimal `yaml:"exchangeFee"`
 	Spread int `yaml:"spread"`
 }
 

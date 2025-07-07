@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-const archiveExtension = "gob.gz"
+const archiveExtension = "gobz"
 
 type Archive struct {
 	Symbol string
@@ -20,28 +20,18 @@ type Archive struct {
 
 type DailyRecord struct {
 	Date time.Time
-	Close serializableDecimal
+	Close SerializableDecimal
 }
 
 type FeatureRecord struct {
 	Timestamp time.Time
-	Momentum8 OptionalFeature
-	Momentum24 OptionalFeature
-	Momentum24Lag OptionalFeature
-	Momentum48 OptionalFeature
-	Returns24 OptionalReturns
-	Returns48 OptionalReturns
-	Returns72 OptionalReturns
-}
-
-type OptionalFeature struct {
-	Value float64
-	Available bool
-}
-
-type OptionalReturns struct {
-	Ticks int
-	Available bool
+	Momentum8 *float64
+	Momentum24 *float64
+	Momentum24Lag *float64
+	Momentum48 *float64
+	Returns24 *int
+	Returns48 *int
+	Returns72 *int
 }
 
 func writeArchive(symbol string, archive *Archive) {

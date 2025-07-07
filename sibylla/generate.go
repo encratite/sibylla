@@ -13,7 +13,7 @@ import (
 
 type openInterestRecord struct {
 	symbol globexCode
-	close serializableDecimal
+	close SerializableDecimal
 	openInterest int
 }
 
@@ -24,7 +24,7 @@ type intradayKey struct {
 
 type openInterestMap map[time.Time][]openInterestRecord
 type dailyGlobexMap map[time.Time]globexCode
-type intradayRecordsMap map[intradayKey]serializableDecimal
+type intradayRecordsMap map[intradayKey]SerializableDecimal
 
 func Generate() {
 	loadConfiguration()
@@ -90,10 +90,10 @@ func processIntradayTimestamp(
 	if !exists {
 		return true
 	}
-	momentumHelper := func (offsetHours, lagHours int) OptionalFeature {
+	momentumHelper := func (offsetHours, lagHours int) *float64 {
 		return getMomentum(offsetHours, lagHours, timestamp, close, symbol, intradayRecords)
 	}
-	returnsHelper := func (horizonHours int) OptionalReturns {
+	returnsHelper := func (horizonHours int) *int {
 		return getReturns(horizonHours, timestamp, close, symbol, intradayRecords, asset)
 	}
 	features := FeatureRecord{
@@ -120,14 +120,10 @@ func getMomentum(
 	offsetHours int,
 	lagHours int,
 	timestamp time.Time,
-	close serializableDecimal,
+	close SerializableDecimal,
 	symbol globexCode,
 	intradayRecords intradayRecordsMap,
-) OptionalFeature {
-	notAvailable := OptionalFeature{
-		Value: 0,
-		Available: false,
-	}
+) *float64 {
 	offsetTimestamp := getAdjustedTimestamp(-offsetHours, timestamp)
 	key := intradayKey{
 		symbol: symbol,
@@ -135,7 +131,7 @@ func getMomentum(
 	}
 	offsetClose, exists := intradayRecords[key]
 	if !exists {
-		return notAvailable
+		return nil
 	}
 	if lagHours > 0 {
 		lagTimestamp := getAdjustedTimestamp(-lagHours, timestamp)
@@ -145,7 +141,7 @@ func getMomentum(
 		}
 		lagClose, exists := intradayRecords[key]
 		if !exists {
-			return notAvailable
+			return nil
 		}
 		close = lagClose
 	}
@@ -153,22 +149,19 @@ func getMomentum(
 	offsetCloseFloat, _ := offsetClose.Float64()
 	momentum, valid := getRateOfChange(closeFloat, offsetCloseFloat)
 	if !valid {
-		return notAvailable
+		return nil
 	}
-	return OptionalFeature{
-		Value: momentum,
-		Available: true,
-	}
+	return &momentum
 }
 
 func getReturns(
 	horizonHours int,
 	timestamp time.Time,
-	close serializableDecimal,
+	close SerializableDecimal,
 	symbol globexCode,
 	intradayRecords intradayRecordsMap,
 	asset *Asset,
-) OptionalReturns {
+) *int {
 	horizonTimestamp := getAdjustedTimestamp(horizonHours, timestamp)
 	key := intradayKey{
 		symbol: symbol,
@@ -178,15 +171,9 @@ func getReturns(
 	if exists {
 		delta := horizonClose.Sub(close.Decimal)
 		ticks := int(delta.Div(asset.TickSize.Decimal).IntPart())
-		return OptionalReturns{
-			Ticks: ticks,
-			Available: true,
-		}
+		return &ticks
 	} else {
-		return OptionalReturns{
-			Ticks: 0,
-			Available: false,
-		}
+		return nil
 	}
 }
 
@@ -236,7 +223,7 @@ func readDailyRecords(asset Asset) openInterestMap {
 		symbol := globexFromString(values[0])
 		date := getDate(values[1])
 		closeDecimal := getDecimal(values[2], path)
-		close := serializableDecimal(closeDecimal)
+		close := SerializableDecimal(closeDecimal)
 		openInterestString := values[3]
 		openInterest, err := strconv.Atoi(openInterestString)
 		if err != nil {
@@ -278,35 +265,35 @@ func getBarchartCsvPath(asset Asset, suffix string) string {
 	return path
 }
 
-func getDecimal(s string, path string) serializableDecimal {
+func getDecimal(s string, path string) SerializableDecimal {
 	value, err := decimal.NewFromString(s)
 	if err != nil {
 		log.Fatalf("Failed to parse decimal string \"%s\" in CSV file (%s): %v", s, path, err)
 	}
-	return serializableDecimal{
+	return SerializableDecimal{
 		Decimal: value,
 	}
 }
 
 func (f *FeatureRecord) includeRecord() bool {
-	features := []OptionalFeature{
+	features := []*float64{
 		f.Momentum8,
 		f.Momentum24,
 		f.Momentum24Lag,
 		f.Momentum48,
 	}
 	for _, x := range features {
-		if x.Available {
+		if x != nil {
 			return true
 		}
 	}
-	returns := []OptionalReturns{
+	returns := []*int{
 		f.Returns24,
 		f.Returns48,
 		f.Returns72,
 	}
 	for _, x := range returns {
-		if x.Available {
+		if x != nil {
 			return true
 		}
 	}
