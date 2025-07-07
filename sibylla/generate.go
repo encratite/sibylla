@@ -11,21 +11,39 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-func Generate() {
-	loadConfiguration()
-	parallelForEach(*assets, processAsset)
+type openInterestRecord struct {
+	symbol globexCode
+	close serializableDecimal
+	openInterest int
 }
 
-func processAsset(asset Asset) {
+type intradayKey struct {
+	symbol globexCode
+	timestamp time.Time
+}
+
+type openInterestMap map[time.Time][]openInterestRecord
+type dailyGlobexMap map[time.Time]globexCode
+type intradayRecordsMap map[intradayKey]serializableDecimal
+
+func Generate() {
+	loadConfiguration()
+	start := time.Now()
+	parallelForEach(*assets, generateArchive)
+	delta := time.Since(start)
+	fmt.Printf("Generated archives in %.2f s\n", delta.Seconds())
+}
+
+func generateArchive(asset Asset) {
 	openIntRecords := readDailyRecords(asset)
 	dailyGlobexRecords := dailyGlobexMap{}
-	dailyRecords := []dailyRecord{}
+	dailyRecords := []DailyRecord{}
 	for date, records := range openIntRecords {
 		maxRecord := getMaxOpenIntRecord(records)
 		dailyGlobexRecords[date] = maxRecord.symbol
-		dailyRecord := dailyRecord{
-			date: date,
-			close: maxRecord.close,
+		dailyRecord := DailyRecord{
+			Date: date,
+			Close: maxRecord.close,
 		}
 		dailyRecords = append(dailyRecords, dailyRecord)
 	}
@@ -34,47 +52,64 @@ func processAsset(asset Asset) {
 	for key := range intradayRecords {
 		intradayTimestamps.ReplaceOrInsert(key.timestamp)
 	}
-	archive := serializedArchive{
-		symbol: asset.Symbol,
-		dailyRecords: dailyRecords,
+	archive := Archive{
+		Symbol: asset.Symbol,
+		DailyRecords: dailyRecords,
 	}
-	intradayTimestamps.Ascend(func(timestamp time.Time) bool {
-		date := time.Date(timestamp.Year(), timestamp.Month(), timestamp.Day(), 0, 0, 0, 0, timestamp.Location())
-		symbol, exists := dailyGlobexRecords[date]
-		if !exists {
-			// There are some faulty intraday records for which no corresponding daily record exists
-			// Skip it
-			return true
-		}
-		key := intradayKey{
-			symbol: symbol,
-			timestamp: timestamp,
-		}
-		close, exists := intradayRecords[key]
-		if !exists {
-			return true
-		}
-		momentumHelper := func (offsetHours, lagHours int) optionalFeature {
-			return getMomentum(offsetHours, lagHours, timestamp, close, symbol, intradayRecords)
-		}
-		returnsHelper := func (horizonHours int) optionalReturns {
-			return getReturns(horizonHours, timestamp, close, symbol, intradayRecords, &asset)
-		}
-		features := featureRecord{
-			timestamp: timestamp,
-			momentum8: momentumHelper(8, 0),
-			momentum24: momentumHelper(hoursPerDay, 0),
-			momentum24_lag: momentumHelper(hoursPerDay, hoursPerDay),
-			momentum48: momentumHelper(2 * hoursPerDay, 0),
-			returns24: returnsHelper(hoursPerDay),
-			returns48: returnsHelper(2 * hoursPerDay),
-			returns72: returnsHelper(3 * hoursPerDay),
-		}
-		if features.includeRecord() {
-			archive.intradayRecords = append(archive.intradayRecords, features)
-		}
-		return true
+	intradayTimestamps.Ascend(func (timestamp time.Time) bool {
+		return processIntradayTimestamp(
+			timestamp,
+			dailyGlobexRecords,
+			intradayRecords,
+			&asset,
+			&archive,
+		)
 	})
+	writeArchive(asset.Symbol, &archive)
+}
+
+func processIntradayTimestamp(
+	timestamp time.Time,
+	dailyGlobexRecords dailyGlobexMap,
+	intradayRecords intradayRecordsMap,
+	asset *Asset,
+	archive *Archive,
+) bool {
+	date := time.Date(timestamp.Year(), timestamp.Month(), timestamp.Day(), 0, 0, 0, 0, timestamp.Location())
+	symbol, exists := dailyGlobexRecords[date]
+	if !exists {
+		// There are some faulty intraday records for which no corresponding daily record exists
+		// Skip it
+		return true
+	}
+	key := intradayKey{
+		symbol: symbol,
+		timestamp: timestamp,
+	}
+	close, exists := intradayRecords[key]
+	if !exists {
+		return true
+	}
+	momentumHelper := func (offsetHours, lagHours int) OptionalFeature {
+		return getMomentum(offsetHours, lagHours, timestamp, close, symbol, intradayRecords)
+	}
+	returnsHelper := func (horizonHours int) OptionalReturns {
+		return getReturns(horizonHours, timestamp, close, symbol, intradayRecords, asset)
+	}
+	features := FeatureRecord{
+		Timestamp: timestamp,
+		Momentum8: momentumHelper(8, 0),
+		Momentum24: momentumHelper(hoursPerDay, 0),
+		Momentum24Lag: momentumHelper(hoursPerDay, hoursPerDay),
+		Momentum48: momentumHelper(2 * hoursPerDay, 0),
+		Returns24: returnsHelper(hoursPerDay),
+		Returns48: returnsHelper(2 * hoursPerDay),
+		Returns72: returnsHelper(3 * hoursPerDay),
+	}
+	if features.includeRecord() {
+		archive.IntradayRecords = append(archive.IntradayRecords, features)
+	}
+	return true
 }
 
 func timeLess(a, b time.Time) bool {
@@ -88,10 +123,10 @@ func getMomentum(
 	close serializableDecimal,
 	symbol globexCode,
 	intradayRecords intradayRecordsMap,
-) optionalFeature {
-	notAvailable := optionalFeature{
-		value: 0,
-		available: false,
+) OptionalFeature {
+	notAvailable := OptionalFeature{
+		Value: 0,
+		Available: false,
 	}
 	offsetTimestamp := getAdjustedTimestamp(-offsetHours, timestamp)
 	key := intradayKey{
@@ -120,9 +155,9 @@ func getMomentum(
 	if !valid {
 		return notAvailable
 	}
-	return optionalFeature{
-		value: momentum,
-		available: true,
+	return OptionalFeature{
+		Value: momentum,
+		Available: true,
 	}
 }
 
@@ -133,7 +168,7 @@ func getReturns(
 	symbol globexCode,
 	intradayRecords intradayRecordsMap,
 	asset *Asset,
-) optionalReturns {
+) OptionalReturns {
 	horizonTimestamp := getAdjustedTimestamp(horizonHours, timestamp)
 	key := intradayKey{
 		symbol: symbol,
@@ -143,14 +178,14 @@ func getReturns(
 	if exists {
 		delta := horizonClose.Sub(close.Decimal)
 		ticks := int(delta.Div(asset.TickSize.Decimal).IntPart())
-		return optionalReturns{
-			ticks: ticks,
-			available: true,
+		return OptionalReturns{
+			Ticks: ticks,
+			Available: true,
 		}
 	} else {
-		return optionalReturns{
-			ticks: 0,
-			available: false,
+		return OptionalReturns{
+			Ticks: 0,
+			Available: false,
 		}
 	}
 }
@@ -251,4 +286,29 @@ func getDecimal(s string, path string) serializableDecimal {
 	return serializableDecimal{
 		Decimal: value,
 	}
+}
+
+func (f *FeatureRecord) includeRecord() bool {
+	features := []OptionalFeature{
+		f.Momentum8,
+		f.Momentum24,
+		f.Momentum24Lag,
+		f.Momentum48,
+	}
+	for _, x := range features {
+		if x.Available {
+			return true
+		}
+	}
+	returns := []OptionalReturns{
+		f.Returns24,
+		f.Returns48,
+		f.Returns72,
+	}
+	for _, x := range returns {
+		if x.Available {
+			return true
+		}
+	}
+	return false
 }
