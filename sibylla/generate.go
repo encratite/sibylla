@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"time"
 
@@ -29,28 +30,65 @@ type intradayRecordsMap map[intradayKey]SerializableDecimal
 func Generate() {
 	loadConfiguration()
 	start := time.Now()
-	parallelForEach(*assets, generateArchive)
+	parallelForEach(*assets, generateArchives)
 	delta := time.Since(start)
 	fmt.Printf("Generated archives in %.2f s\n", delta.Seconds())
 }
 
-func generateArchive(asset Asset) {
+func generateArchives(asset Asset) {
 	openIntRecords, includedRecords, excludedRecords := readDailyRecords(asset)
-	dailyGlobexRecords := dailyGlobexMap{}
-	dailyRecords := []DailyRecord{}
-	for date, records := range openIntRecords {
-		maxRecord := getMaxOpenIntRecord(records)
-		dailyGlobexRecords[date] = maxRecord.symbol
-		dailyRecord := DailyRecord{
-			Date: date,
-			Close: maxRecord.close,
-		}
-		dailyRecords = append(dailyRecords, dailyRecord)
-	}
 	intradayRecords := readIntradayRecords(asset)
 	intradayTimestamps := btree.NewG(32, timeLess)
 	for key := range intradayRecords {
 		intradayTimestamps.ReplaceOrInsert(key.timestamp)
+	}
+	totalRecords := includedRecords + excludedRecords
+	exclusionRatio := float64(excludedRecords) / float64(totalRecords) * 100.0
+	fmt.Printf("[%s] Excluded %.2f%% of records\n", asset.Symbol, exclusionRatio)
+	limit := fRecordsLimit
+	if asset.FRecordsLimit != nil {
+		limit = *asset.FRecordsLimit
+	}
+	for fNumber := 1; fNumber <= limit; fNumber++ {
+		generateFRecords(
+			&fNumber,
+			openIntRecords,
+			intradayRecords,
+			intradayTimestamps,
+			asset,
+		)
+	}
+	if asset.EnableFYRecords == nil || *asset.EnableFYRecords {
+		generateFRecords(
+			nil,
+			openIntRecords,
+			intradayRecords,
+			intradayTimestamps,
+			asset,
+		)
+	}
+}
+
+func generateFRecords(
+	fNumber *int,
+	openIntRecords openInterestMap,
+	intradayRecords intradayRecordsMap,
+	intradayTimestamps *btree.BTreeG[time.Time],
+	asset Asset,
+) {
+	dailyGlobexRecords := dailyGlobexMap{}
+	dailyRecords := []DailyRecord{}
+	for date, records := range openIntRecords {
+		fRecord := getFRecord(fNumber, date, records)
+		if fRecord == nil {
+			continue
+		}
+		dailyGlobexRecords[date] = fRecord.symbol
+		dailyRecord := DailyRecord{
+			Date: date,
+			Close: fRecord.close,
+		}
+		dailyRecords = append(dailyRecords, dailyRecord)
 	}
 	archive := Archive{
 		Symbol: asset.Symbol,
@@ -65,10 +103,15 @@ func generateArchive(asset Asset) {
 			&archive,
 		)
 	})
-	path := writeArchive(asset.Symbol, &archive)
-	totalRecords := includedRecords + excludedRecords
-	exclusionRatio := float64(excludedRecords) / float64(totalRecords) * 100.0
-	fmt.Printf("Wrote archive to %s (%.2f%% of records excluded)\n", path, exclusionRatio)
+	var suffix string
+	if fNumber != nil {
+		suffix = fmt.Sprintf("F%d", *fNumber)
+	} else {
+		suffix = "FY"
+	}
+	path, sizeBytes := writeArchive(asset.Symbol, suffix, &archive)
+	sizeMibibytes := float64(sizeBytes) / 1024.0 / 1024.0
+	fmt.Printf("[%s] Wrote archive to %s (%.1f MiB)\n", asset.Symbol, path, sizeMibibytes)
 }
 
 func processIntradayTimestamp(
@@ -81,8 +124,6 @@ func processIntradayTimestamp(
 	date := time.Date(timestamp.Year(), timestamp.Month(), timestamp.Day(), 0, 0, 0, 0, timestamp.Location())
 	symbol, exists := dailyGlobexRecords[date]
 	if !exists {
-		// There are some faulty intraday records for which no corresponding daily record exists
-		// Skip it
 		return true
 	}
 	key := intradayKey{
@@ -208,14 +249,26 @@ func getAdjustedTimestamp(offsetHours int, timestamp time.Time) time.Time {
 	return adjustedTimestamp
 }
 
-func getMaxOpenIntRecord(records []openInterestRecord) openInterestRecord {
-	max := records[0]
-	for _, record := range records[1:] {
-		if record.openInterest > max.openInterest {
-			max = record
+func getFRecord(fNumber *int, date time.Time, records []openInterestRecord) *openInterestRecord {
+	root := records[0].symbol.Root
+	if fNumber != nil {
+		index := *fNumber - 1
+		if index >= len(records) {
+			fmt.Printf("[%s] Unable to determine F%d record at %s\n", root, *fNumber, getDateString(date))
+			return nil
 		}
+		return &records[index]
+	} else {
+		firstSymbol := records[0].symbol
+		for _, record := range records[1:] {
+			symbol := record.symbol
+			if symbol.Year > firstSymbol.Year && symbol.Month >= firstSymbol.Month {
+				return &record
+			}
+		}
+		fmt.Printf("[%s] Unable to determine FY record at %s\n", root, getDateString(date))
+		return nil
 	}
-	return max
 }
 
 func readDailyRecords(asset Asset) (openInterestMap, int, int) {
@@ -232,6 +285,11 @@ func readDailyRecords(asset Asset) (openInterestMap, int, int) {
 		date, err := getDate(values[1])
 		if err != nil {
 			log.Fatal(err)
+		}
+		if date.Before(configuration.CutoffDate.Time) {
+			// Record is too old, skip it
+			excludedRecords += 1
+			return
 		}
 		if !asset.includeRecord(date, symbol) {
 			// The contract filter excludes the record, skip it
@@ -254,6 +312,11 @@ func readDailyRecords(asset Asset) (openInterestMap, int, int) {
 		includedRecords += 1
 	}
 	readCsv(path, columns, callback)
+	for _, records := range openIntRecords {
+		sort.Slice(records, func (i, j int) bool {
+			return records[i].openInterest > records[j].openInterest
+		})
+	}
 	return openIntRecords, includedRecords, excludedRecords
 }
 
@@ -267,6 +330,9 @@ func readIntradayRecords(asset Asset) intradayRecordsMap {
 			log.Fatal(err)
 		}
 		timestamp := getTime(values[1])
+		if timestamp.Before(configuration.CutoffDate.Time) {
+			return
+		}
 		close := getDecimal(values[2], path)
 		key := intradayKey{
 			symbol: symbol,

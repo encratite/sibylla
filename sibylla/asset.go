@@ -15,7 +15,7 @@ type Asset struct {
 
 	// Contract filtering fields
 	FRecordsLimit *int `yaml:"fRecordsLimit"`
-	EnableFYRecords bool `yaml:"enableFYRecords"`
+	EnableFYRecords *bool `yaml:"enableFYRecords"`
 	LegacyCutoff *GlobexCode `yaml:"legacyCutoff"`
 	FirstFilterContract *GlobexCode `yaml:"firstFilterContract"`
 	LastFilterContract *GlobexCode `yaml:"lastFilterContract"`

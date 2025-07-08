@@ -2,6 +2,7 @@ package sibylla
 
 import (
 	"log"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -9,6 +10,11 @@ import (
 type Configuration struct {
 	BarchartPath string `yaml:"barchartPath"`
 	GobPath string `yaml:"gobPath"`
+	CutoffDate SerializableDate `yaml:"cutoffDate"`
+}
+
+type SerializableDate struct {
+	time.Time
 }
 
 const configurationPath = "configuration/configuration.yaml"
@@ -49,4 +55,13 @@ func loadAssets() {
 	if err != nil {
 		log.Fatal("Failed to unmarshal YAML:", err)
 	}
+}
+
+func (d *SerializableDate) UnmarshalYAML(value *yaml.Node) error {
+	date, err := getDate(value.Value)
+	if err != nil {
+		return err
+	}
+	d.Time = date
+	return nil
 }

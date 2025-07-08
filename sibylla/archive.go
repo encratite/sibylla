@@ -34,23 +34,6 @@ type FeatureRecord struct {
 	Returns72 *int
 }
 
-func writeArchive(symbol string, archive *Archive) string {
-	path := filepath.Join(configuration.GobPath, fmt.Sprintf("%s.%s", symbol, archiveExtension))
-	file, err := os.Create(path)
-	if err != nil {
-		log.Fatalf("Failed to write archive to %s: %v", path, err)
-	}
-	defer file.Close()
-	writer := gzip.NewWriter(file)
-	defer writer.Close()
-	encoder := gob.NewEncoder(writer)
-	err = encoder.Encode(archive)
-	if err != nil {
-		log.Fatal("Failed to encode archive:", err)
-	}
-	return path
-}
-
 func readArchive(path string) Archive {
 	file, err := os.Open(path)
 	if err != nil {
@@ -69,4 +52,29 @@ func readArchive(path string) Archive {
 		log.Fatalf("Failed to read decompressed Gob data from %s: %v", path, err)
 	}
 	return archive
+}
+
+func writeArchive(symbol string, suffix string, archive *Archive) (string, int64) {
+	fileName := fmt.Sprintf("%s.%s.%s", symbol, suffix, archiveExtension)
+	path := filepath.Join(configuration.GobPath, fileName)
+	{
+		file, err := os.Create(path)
+		if err != nil {
+			log.Fatalf("Failed to write archive to %s: %v", path, err)
+		}
+		defer file.Close()
+		writer := gzip.NewWriter(file)
+		defer writer.Close()
+		encoder := gob.NewEncoder(writer)
+		err = encoder.Encode(archive)
+		if err != nil {
+			log.Fatalf("Failed to encode archive %s: %v", path, err)
+		}
+	}
+	fileInfo, err := os.Stat(path)
+	if err != nil {
+		log.Fatalf("Failed to retrieve size of archive %s: %v", path, err)
+	}
+	size := fileInfo.Size()
+	return path, size
 }
