@@ -8,9 +8,13 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/google/btree"
 	"github.com/shopspring/decimal"
 )
+
+type openInterestRecords struct {
+	date time.Time
+	records []openInterestRecord
+}
 
 type openInterestRecord struct {
 	symbol GlobexCode
@@ -38,13 +42,21 @@ func Generate() {
 func generateArchives(asset Asset) {
 	openIntRecords, includedRecords, excludedRecords := readDailyRecords(asset)
 	intradayRecords := readIntradayRecords(asset)
-	intradayTimestamps := btree.NewG(32, timeLess)
+	intradayTimestampsMap := map[time.Time]struct{}{}
 	for key := range intradayRecords {
-		intradayTimestamps.ReplaceOrInsert(key.timestamp)
+		intradayTimestampsMap[key.timestamp] = struct{}{}
 	}
+	intradayTimestamps := []time.Time{}
+	for key := range intradayTimestampsMap {
+		intradayTimestamps = append(intradayTimestamps, key)
+	}
+	sort.Slice(intradayTimestamps, func (i, j int) bool {
+		return intradayTimestamps[i].Before(intradayTimestamps[j])
+	})
 	totalRecords := includedRecords + excludedRecords
 	exclusionRatio := float64(excludedRecords) / float64(totalRecords) * 100.0
 	fmt.Printf("[%s] Excluded %.2f%% of records\n", asset.Symbol, exclusionRatio)
+	/*
 	limit := fRecordsLimit
 	if asset.FRecordsLimit != nil {
 		limit = *asset.FRecordsLimit
@@ -58,6 +70,7 @@ func generateArchives(asset Asset) {
 			asset,
 		)
 	}
+	*/
 	if asset.EnableFYRecords == nil || *asset.EnableFYRecords {
 		generateFRecords(
 			nil,
@@ -71,15 +84,16 @@ func generateArchives(asset Asset) {
 
 func generateFRecords(
 	fNumber *int,
-	openIntRecords openInterestMap,
+	openIntRecords []openInterestRecords,
 	intradayRecords intradayRecordsMap,
-	intradayTimestamps *btree.BTreeG[time.Time],
+	intradayTimestamps []time.Time,
 	asset Asset,
 ) {
 	dailyGlobexRecords := dailyGlobexMap{}
 	dailyRecords := []DailyRecord{}
-	for date, records := range openIntRecords {
-		fRecord := getFRecord(fNumber, date, records)
+	for _, datedRecords := range openIntRecords {
+		date := datedRecords.date
+		fRecord := getFRecord(fNumber, date, datedRecords.records)
 		if fRecord == nil {
 			continue
 		}
@@ -94,15 +108,15 @@ func generateFRecords(
 		Symbol: asset.Symbol,
 		DailyRecords: dailyRecords,
 	}
-	intradayTimestamps.Ascend(func (timestamp time.Time) bool {
-		return processIntradayTimestamp(
+	for _, timestamp := range intradayTimestamps {
+		processIntradayTimestamp(
 			timestamp,
 			dailyGlobexRecords,
 			intradayRecords,
 			&asset,
 			&archive,
 		)
-	})
+	}
 	var suffix string
 	if fNumber != nil {
 		suffix = fmt.Sprintf("F%d", *fNumber)
@@ -120,20 +134,24 @@ func processIntradayTimestamp(
 	intradayRecords intradayRecordsMap,
 	asset *Asset,
 	archive *Archive,
-) bool {
+) {
 	date := time.Date(timestamp.Year(), timestamp.Month(), timestamp.Day(), 0, 0, 0, 0, timestamp.Location())
 	symbol, exists := dailyGlobexRecords[date]
 	if !exists {
-		return true
+		// fmt.Printf("Missing date: %s\n", getDateString(date))
+		return
 	}
+	// fmt.Printf("Found date: %s\n", getDateString(date))
 	key := intradayKey{
 		symbol: symbol,
 		timestamp: timestamp,
 	}
 	close, exists := intradayRecords[key]
 	if !exists {
-		return true
+		// fmt.Printf("intradayRecords lookup failed: %s %s\n", symbol, getTimeString(timestamp))
+		return
 	}
+	fmt.Printf("intradayRecords lookup succeeded: %s %s\n", symbol, getTimeString(timestamp))
 	momentumHelper := func (offsetHours, lagHours int) *float64 {
 		return getMomentum(offsetHours, lagHours, timestamp, close, symbol, intradayRecords)
 	}
@@ -153,11 +171,6 @@ func processIntradayTimestamp(
 	if features.includeRecord() {
 		archive.IntradayRecords = append(archive.IntradayRecords, features)
 	}
-	return true
-}
-
-func timeLess(a, b time.Time) bool {
-	return a.Before(b)
 }
 
 func getMomentum(
@@ -271,10 +284,10 @@ func getFRecord(fNumber *int, date time.Time, records []openInterestRecord) *ope
 	}
 }
 
-func readDailyRecords(asset Asset) (openInterestMap, int, int) {
+func readDailyRecords(asset Asset) ([]openInterestRecords, int, int) {
 	path := getBarchartCsvPath(asset, "D1")
 	columns := []string{"symbol", "time", "close", "open_interest"}
-	openIntRecords := openInterestMap{}
+	openIntMap := openInterestMap{}
 	includedRecords := 0
 	excludedRecords := 0
 	callback := func(values []string) {
@@ -308,15 +321,24 @@ func readDailyRecords(asset Asset) (openInterestMap, int, int) {
 			close: close,
 			openInterest: openInterest,
 		}
-		openIntRecords[date] = append(openIntRecords[date], openIntRecord)
+		openIntMap[date] = append(openIntMap[date], openIntRecord)
 		includedRecords += 1
 	}
 	readCsv(path, columns, callback)
-	for _, records := range openIntRecords {
+	openIntRecords := []openInterestRecords{}
+	for date, records := range openIntMap {
 		sort.Slice(records, func (i, j int) bool {
 			return records[i].openInterest > records[j].openInterest
 		})
+		datedRecords := openInterestRecords{
+			date: date,
+			records: records,
+		}
+		openIntRecords = append(openIntRecords, datedRecords)
 	}
+	sort.Slice(openIntRecords, func (i, j int) bool {
+		return openIntRecords[i].date.Before(openIntRecords[j].date)
+	})
 	return openIntRecords, includedRecords, excludedRecords
 }
 
