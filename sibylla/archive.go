@@ -34,7 +34,7 @@ type FeatureRecord struct {
 	Returns72 *int
 }
 
-func writeArchive(symbol string, archive *Archive) {
+func writeArchive(symbol string, archive *Archive) string {
 	path := filepath.Join(configuration.GobPath, fmt.Sprintf("%s.%s", symbol, archiveExtension))
 	file, err := os.Create(path)
 	if err != nil {
@@ -48,7 +48,7 @@ func writeArchive(symbol string, archive *Archive) {
 	if err != nil {
 		log.Fatal("Failed to encode archive:", err)
 	}
-	fmt.Printf("Wrote archive to %s\n", path)
+	return path
 }
 
 func readArchive(path string) Archive {

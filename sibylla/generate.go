@@ -35,7 +35,7 @@ func Generate() {
 }
 
 func generateArchive(asset Asset) {
-	openIntRecords := readDailyRecords(asset)
+	openIntRecords, includedRecords, excludedRecords := readDailyRecords(asset)
 	dailyGlobexRecords := dailyGlobexMap{}
 	dailyRecords := []DailyRecord{}
 	for date, records := range openIntRecords {
@@ -65,7 +65,10 @@ func generateArchive(asset Asset) {
 			&archive,
 		)
 	})
-	writeArchive(asset.Symbol, &archive)
+	path := writeArchive(asset.Symbol, &archive)
+	totalRecords := includedRecords + excludedRecords
+	exclusionRatio := float64(excludedRecords) / float64(totalRecords) * 100.0
+	fmt.Printf("Wrote archive to %s (%.2f%% of records excluded)\n", path, exclusionRatio)
 }
 
 func processIntradayTimestamp(
@@ -215,10 +218,12 @@ func getMaxOpenIntRecord(records []openInterestRecord) openInterestRecord {
 	return max
 }
 
-func readDailyRecords(asset Asset) openInterestMap {
+func readDailyRecords(asset Asset) (openInterestMap, int, int) {
 	path := getBarchartCsvPath(asset, "D1")
 	columns := []string{"symbol", "time", "close", "open_interest"}
 	openIntRecords := openInterestMap{}
+	includedRecords := 0
+	excludedRecords := 0
 	callback := func(values []string) {
 		symbol, err := parseGlobex(values[0])
 		if err != nil {
@@ -227,6 +232,11 @@ func readDailyRecords(asset Asset) openInterestMap {
 		date, err := getDate(values[1])
 		if err != nil {
 			log.Fatal(err)
+		}
+		if !asset.includeRecord(date, symbol) {
+			// The contract filter excludes the record, skip it
+			excludedRecords += 1
+			return
 		}
 		closeDecimal := getDecimal(values[2], path)
 		close := SerializableDecimal(closeDecimal)
@@ -241,9 +251,10 @@ func readDailyRecords(asset Asset) openInterestMap {
 			openInterest: openInterest,
 		}
 		openIntRecords[date] = append(openIntRecords[date], openIntRecord)
+		includedRecords += 1
 	}
 	readCsv(path, columns, callback)
-	return openIntRecords
+	return openIntRecords, includedRecords, excludedRecords
 }
 
 func readIntradayRecords(asset Asset) intradayRecordsMap {

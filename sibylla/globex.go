@@ -2,6 +2,7 @@ package sibylla
 
 import (
 	"fmt"
+	"log"
 	"regexp"
 	"strconv"
 
@@ -39,6 +40,23 @@ func parseGlobex(symbol string) (GlobexCode, error) {
 		Year: year,
 	}
 	return output, nil
+}
+
+func (g GlobexCode) Less(other GlobexCode) bool {
+	if g.Root != other.Root {
+		log.Fatalf("Tried to compare Globex codes with different roots (%s vs. %s)", g.Root, other.Root)
+	}
+	if g.Year < other.Year {
+		return true
+	} else if g.Year == other.Year && g.Month < other.Month {
+		return true
+	} else {
+		return false
+	}
+}
+
+func (g GlobexCode) String() string {
+	return fmt.Sprintf("%s%s%02d", g.Root, g.Month, g.Year % 100)
 }
 
 func (g *GlobexCode) UnmarshalYAML(value *yaml.Node) error {

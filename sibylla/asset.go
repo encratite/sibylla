@@ -1,6 +1,8 @@
 package sibylla
 
 import (
+	"fmt"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -36,12 +38,52 @@ type ConfigDate struct {
 	time.Time
 }
 
-func (definition *Asset) getBarchartSymbol() string {
-	symbol := definition.Symbol
-	if definition.BarchartSymbol != "" {
-		symbol = definition.BarchartSymbol
+const enableFilterDebugOutput = false
+
+func (a *Asset) getBarchartSymbol() string {
+	symbol := a.Symbol
+	if a.BarchartSymbol != "" {
+		symbol = a.BarchartSymbol
 	}
 	return symbol
+}
+
+func (a *Asset) includeRecord(date time.Time, symbol GlobexCode) bool {
+	if a.CutoffDate != nil && date.Before(a.CutoffDate.Time) {
+		if enableFilterDebugOutput {
+			fmt.Printf("Excluded %s due to CutOffDate %s\n", symbol, getDateString((*a.CutoffDate).Time))
+		}
+		return false
+	}
+	if a.LegacyCutoff != nil && symbol.Less(*a.LegacyCutoff) {
+		if enableFilterDebugOutput {
+			fmt.Printf("Excluded %s due to LegacyCutoff %s\n", symbol, a.LegacyCutoff)
+		}
+		return false
+	}
+	if a.FirstFilterContract != nil && a.LastFilterContract != nil {
+		if symbol.Less(*a.FirstFilterContract) || !symbol.Less(*a.LastFilterContract) {
+			return true
+		}
+	} else if a.FirstFilterContract != nil && symbol.Less(*a.FirstFilterContract) {
+		return true
+	} else if a.LastFilterContract != nil && !symbol.Less(*a.LastFilterContract) {
+		return true
+	}
+	if a.IncludeMonths != nil {
+		include := containsString(symbol.Month, a.IncludeMonths)
+		if enableFilterDebugOutput && !include {
+			fmt.Printf("Excluded %s due to IncludeMonths %s\n", symbol, strings.Join(a.IncludeMonths, ", "))
+		}
+		return include
+	} else if a.ExcludeMonths != nil {
+		include := !containsString(symbol.Month, a.ExcludeMonths)
+		if enableFilterDebugOutput && !include {
+			fmt.Printf("Excluded %s due to ExcludeMonths %s\n", symbol, strings.Join(a.ExcludeMonths, ", "))
+		}
+		return include
+	}
+	return true
 }
 
 func (c *ConfigDate) UnmarshalYAML(value *yaml.Node) error {
@@ -51,4 +93,13 @@ func (c *ConfigDate) UnmarshalYAML(value *yaml.Node) error {
 	}
 	*c = ConfigDate{date}
 	return nil
+}
+
+func containsString(target string, strings []string) bool {
+	for _, x := range strings {
+		if x == target {
+			return true
+		}
+	}
+	return false
 }
