@@ -56,7 +56,6 @@ func generateArchives(asset Asset) {
 	totalRecords := includedRecords + excludedRecords
 	exclusionRatio := float64(excludedRecords) / float64(totalRecords) * 100.0
 	fmt.Printf("[%s] Excluded %.2f%% of records\n", asset.Symbol, exclusionRatio)
-	/*
 	limit := fRecordsLimit
 	if asset.FRecordsLimit != nil {
 		limit = *asset.FRecordsLimit
@@ -70,8 +69,7 @@ func generateArchives(asset Asset) {
 			asset,
 		)
 	}
-	*/
-	if asset.EnableFYRecords == nil || *asset.EnableFYRecords {
+	if asset.EnableFYRecords {
 		generateFRecords(
 			nil,
 			openIntRecords,
@@ -138,20 +136,16 @@ func processIntradayTimestamp(
 	date := time.Date(timestamp.Year(), timestamp.Month(), timestamp.Day(), 0, 0, 0, 0, timestamp.Location())
 	symbol, exists := dailyGlobexRecords[date]
 	if !exists {
-		// fmt.Printf("Missing date: %s\n", getDateString(date))
 		return
 	}
-	// fmt.Printf("Found date: %s\n", getDateString(date))
 	key := intradayKey{
 		symbol: symbol,
 		timestamp: timestamp,
 	}
 	close, exists := intradayRecords[key]
 	if !exists {
-		// fmt.Printf("intradayRecords lookup failed: %s %s\n", symbol, getTimeString(timestamp))
 		return
 	}
-	fmt.Printf("intradayRecords lookup succeeded: %s %s\n", symbol, getTimeString(timestamp))
 	momentumHelper := func (offsetHours, lagHours int) *float64 {
 		return getMomentum(offsetHours, lagHours, timestamp, close, symbol, intradayRecords)
 	}

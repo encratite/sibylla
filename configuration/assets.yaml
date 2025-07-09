@@ -1,10 +1,37 @@
+# US indexes
 - symbol: ES
   name: S&P 500 E-Mini
   legacyCutoff: ESU02
+  fRecordsLimit: 2
   currency: USD
   tickSize: 0.25
   tickValue: 12.50
   margin: 11331.10
   brokerFee: 0.85
   exchangeFee: 1.40
+  spread: 1
+- symbol: NQ
+  name: Nasdaq 100 E-Mini
+  legacyCutoff: NQM01
+  fRecordsLimit: 2
+  currency: USD
+  tickSize: 0.25
+  tickValue: 5.0
+  margin: 21674.50
+  brokerFee: 0.85
+  exchangeFee: 1.40
+  spread: 3
+
+# Energies
+- symbol: CL
+  name: Crude Oil
+  legacyCutoff: CLK03
+  cutoffDate: 2000-09-01
+  enableFYRecords: true
+  currency: USD
+  tickSize: 0.01
+  tickValue: 10.0
+  margin: 16250
+  brokerFee: 0.85
+  exchangeFee: 1.52
   spread: 1

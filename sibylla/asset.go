@@ -14,14 +14,14 @@ type Asset struct {
 	Name string `yaml:"name"`
 
 	// Contract filtering fields
-	FRecordsLimit *int `yaml:"fRecordsLimit"`
-	EnableFYRecords *bool `yaml:"enableFYRecords"`
 	LegacyCutoff *GlobexCode `yaml:"legacyCutoff"`
 	FirstFilterContract *GlobexCode `yaml:"firstFilterContract"`
 	LastFilterContract *GlobexCode `yaml:"lastFilterContract"`
 	IncludeMonths []string `yaml:"includeMonths"`
 	ExcludeMonths []string `yaml:"excludeMonths"`
 	CutoffDate *ConfigDate `yaml:"cutoffDate"`
+	FRecordsLimit *int `yaml:"fRecordsLimit"`
+	EnableFYRecords bool `yaml:"enableFYRecords"`
 	FeaturesOnly bool `yaml:"featuresOnly"`
 
 	// Asset definition
