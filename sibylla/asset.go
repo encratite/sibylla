@@ -20,8 +20,7 @@ type Asset struct {
 	IncludeMonths []string `yaml:"includeMonths"`
 	ExcludeMonths []string `yaml:"excludeMonths"`
 	CutoffDate *ConfigDate `yaml:"cutoffDate"`
-	FRecordsLimit *int `yaml:"fRecordsLimit"`
-	EnableFYRecords bool `yaml:"enableFYRecords"`
+	FRecords *int `yaml:"fRecords"`
 	FeaturesOnly bool `yaml:"featuresOnly"`
 
 	// Asset definition

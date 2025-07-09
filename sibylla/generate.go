@@ -3,6 +3,7 @@ package sibylla
 import (
 	"fmt"
 	"log"
+	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -56,22 +57,13 @@ func generateArchives(asset Asset) {
 	totalRecords := includedRecords + excludedRecords
 	exclusionRatio := float64(excludedRecords) / float64(totalRecords) * 100.0
 	fmt.Printf("[%s] Excluded %.2f%% of records\n", asset.Symbol, exclusionRatio)
-	limit := fRecordsLimit
-	if asset.FRecordsLimit != nil {
-		limit = *asset.FRecordsLimit
+	fLimit := fLimitDefault
+	if asset.FRecords != nil {
+		fLimit = *asset.FRecords
 	}
-	for fNumber := 1; fNumber <= limit; fNumber++ {
+	for fNumber := 1; fNumber <= fLimit; fNumber++ {
 		generateFRecords(
-			&fNumber,
-			openIntRecords,
-			intradayRecords,
-			intradayTimestamps,
-			asset,
-		)
-	}
-	if asset.EnableFYRecords {
-		generateFRecords(
-			nil,
+			fNumber,
 			openIntRecords,
 			intradayRecords,
 			intradayTimestamps,
@@ -81,12 +73,22 @@ func generateArchives(asset Asset) {
 }
 
 func generateFRecords(
-	fNumber *int,
+	fNumber int,
 	openIntRecords []openInterestRecords,
 	intradayRecords intradayRecordsMap,
 	intradayTimestamps []time.Time,
 	asset Asset,
 ) {
+	suffix := fmt.Sprintf("F%d", fNumber)
+	fileName := fmt.Sprintf("%s.%s.%s", asset.Symbol, suffix, archiveExtension)
+	path := filepath.Join(configuration.GobPath, fileName)
+	if !configuration.OverwriteArchives {
+		_, err := os.Stat(path)
+		if !os.IsNotExist(err) {
+			fmt.Printf("[%s] Archive already exists, skipping: %s\n", asset.Symbol, path)
+			return
+		}
+	}
 	dailyGlobexRecords := dailyGlobexMap{}
 	dailyRecords := []DailyRecord{}
 	for _, datedRecords := range openIntRecords {
@@ -115,13 +117,7 @@ func generateFRecords(
 			&archive,
 		)
 	}
-	var suffix string
-	if fNumber != nil {
-		suffix = fmt.Sprintf("F%d", *fNumber)
-	} else {
-		suffix = "FY"
-	}
-	path, sizeBytes := writeArchive(asset.Symbol, suffix, &archive)
+	sizeBytes := writeArchive(path, &archive)
 	sizeMibibytes := float64(sizeBytes) / 1024.0 / 1024.0
 	fmt.Printf("[%s] Wrote archive to %s (%.1f MiB)\n", asset.Symbol, path, sizeMibibytes)
 }
@@ -256,26 +252,14 @@ func getAdjustedTimestamp(offsetHours int, timestamp time.Time) time.Time {
 	return adjustedTimestamp
 }
 
-func getFRecord(fNumber *int, date time.Time, records []openInterestRecord) *openInterestRecord {
+func getFRecord(fNumber int, date time.Time, records []openInterestRecord) *openInterestRecord {
 	root := records[0].symbol.Root
-	if fNumber != nil {
-		index := *fNumber - 1
-		if index >= len(records) {
-			fmt.Printf("[%s] Unable to determine F%d record at %s\n", root, *fNumber, getDateString(date))
-			return nil
-		}
-		return &records[index]
-	} else {
-		firstSymbol := records[0].symbol
-		for _, record := range records[1:] {
-			symbol := record.symbol
-			if symbol.Year > firstSymbol.Year && symbol.Month >= firstSymbol.Month {
-				return &record
-			}
-		}
-		fmt.Printf("[%s] Unable to determine FY record at %s\n", root, getDateString(date))
+	index := fNumber - 1
+	if index >= len(records) {
+		fmt.Printf("[%s] Unable to determine F%d record at %s\n", root, fNumber, getDateString(date))
 		return nil
 	}
+	return &records[index]
 }
 
 func readDailyRecords(asset Asset) ([]openInterestRecords, int, int) {

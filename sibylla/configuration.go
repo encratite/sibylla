@@ -11,6 +11,7 @@ type Configuration struct {
 	BarchartPath string `yaml:"barchartPath"`
 	GobPath string `yaml:"gobPath"`
 	CutoffDate SerializableDate `yaml:"cutoffDate"`
+	OverwriteArchives bool `yaml:"overwriteArchives"`
 }
 
 type SerializableDate struct {

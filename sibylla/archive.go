@@ -3,10 +3,8 @@ package sibylla
 import (
 	"compress/gzip"
 	"encoding/gob"
-	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 	"time"
 )
 
@@ -54,9 +52,7 @@ func readArchive(path string) Archive {
 	return archive
 }
 
-func writeArchive(symbol string, suffix string, archive *Archive) (string, int64) {
-	fileName := fmt.Sprintf("%s.%s.%s", symbol, suffix, archiveExtension)
-	path := filepath.Join(configuration.GobPath, fileName)
+func writeArchive(path string, archive *Archive) int64 {
 	{
 		file, err := os.Create(path)
 		if err != nil {
@@ -76,5 +72,5 @@ func writeArchive(symbol string, suffix string, archive *Archive) (string, int64
 		log.Fatalf("Failed to retrieve size of archive %s: %v", path, err)
 	}
 	size := fileInfo.Size()
-	return path, size
+	return size
 }

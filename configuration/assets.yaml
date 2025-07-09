@@ -2,7 +2,6 @@
 - symbol: ES
   name: S&P 500 E-Mini
   legacyCutoff: ESU02
-  fRecordsLimit: 2
   currency: USD
   tickSize: 0.25
   tickValue: 12.50
@@ -13,7 +12,6 @@
 - symbol: NQ
   name: Nasdaq 100 E-Mini
   legacyCutoff: NQM01
-  fRecordsLimit: 2
   currency: USD
   tickSize: 0.25
   tickValue: 5.0
@@ -27,7 +25,7 @@
   name: Crude Oil
   legacyCutoff: CLK03
   cutoffDate: 2000-09-01
-  enableFYRecords: true
+  fRecords: 3
   currency: USD
   tickSize: 0.01
   tickValue: 10.0
