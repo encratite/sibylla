@@ -14,10 +14,10 @@ import (
 
 type openInterestRecords struct {
 	date time.Time
-	records []openInterestRecord
+	records []dailyRecord
 }
 
-type openInterestRecord struct {
+type dailyRecord struct {
 	symbol GlobexCode
 	close SerializableDecimal
 	openInterest int
@@ -28,8 +28,8 @@ type intradayKey struct {
 	timestamp time.Time
 }
 
-type openInterestMap map[time.Time][]openInterestRecord
-type dailyGlobexMap map[time.Time]GlobexCode
+type openInterestMap map[time.Time][]dailyRecord
+type dailyRecordMap map[time.Time]dailyRecord
 type intradayRecordsMap map[intradayKey]SerializableDecimal
 
 func Generate() {
@@ -89,7 +89,7 @@ func generateFRecords(
 			return
 		}
 	}
-	dailyGlobexRecords := dailyGlobexMap{}
+	dailyMap := dailyRecordMap{}
 	dailyRecords := []DailyRecord{}
 	for _, datedRecords := range openIntRecords {
 		date := datedRecords.date
@@ -97,7 +97,7 @@ func generateFRecords(
 		if fRecord == nil {
 			continue
 		}
-		dailyGlobexRecords[date] = fRecord.symbol
+		dailyMap[date] = *fRecord
 		dailyRecord := DailyRecord{
 			Date: date,
 			Close: fRecord.close,
@@ -111,7 +111,7 @@ func generateFRecords(
 	for _, timestamp := range intradayTimestamps {
 		processIntradayTimestamp(
 			timestamp,
-			dailyGlobexRecords,
+			dailyMap,
 			intradayRecords,
 			&asset,
 			&archive,
@@ -124,16 +124,17 @@ func generateFRecords(
 
 func processIntradayTimestamp(
 	timestamp time.Time,
-	dailyGlobexRecords dailyGlobexMap,
+	dailyRecords dailyRecordMap,
 	intradayRecords intradayRecordsMap,
 	asset *Asset,
 	archive *Archive,
 ) {
 	date := time.Date(timestamp.Year(), timestamp.Month(), timestamp.Day(), 0, 0, 0, 0, timestamp.Location())
-	symbol, exists := dailyGlobexRecords[date]
+	record, exists := dailyRecords[date]
 	if !exists {
 		return
 	}
+	symbol := record.symbol
 	key := intradayKey{
 		symbol: symbol,
 		timestamp: timestamp,
@@ -142,21 +143,22 @@ func processIntradayTimestamp(
 	if !exists {
 		return
 	}
-	momentumHelper := func (offsetHours, lagHours int) *float64 {
-		return getMomentum(offsetHours, lagHours, timestamp, close, symbol, intradayRecords)
+	momentumHelper := func (offsetDays, lagDays, offsetHours int) *float64 {
+		return getMomentum(offsetDays, lagDays, offsetHours, timestamp, close, symbol, intradayRecords)
 	}
 	returnsHelper := func (horizonHours int) *int {
 		return getReturns(horizonHours, timestamp, close, symbol, intradayRecords, asset)
 	}
+	closeTimestamp := timestamp.Add(time.Hour)
 	features := FeatureRecord{
-		Timestamp: timestamp,
-		Momentum8: momentumHelper(8, 0),
-		Momentum24: momentumHelper(hoursPerDay, 0),
-		Momentum24Lag: momentumHelper(hoursPerDay, hoursPerDay),
-		Momentum48: momentumHelper(2 * hoursPerDay, 0),
-		Returns24: returnsHelper(hoursPerDay),
-		Returns48: returnsHelper(2 * hoursPerDay),
-		Returns72: returnsHelper(3 * hoursPerDay),
+		Timestamp: closeTimestamp,
+		Momentum1D: momentumHelper(1, 0, 0),
+		Momentum2D: momentumHelper(2, 0, 0),
+		Momentum2DLag: momentumHelper(2, 1, 0),
+		Momentum8H: momentumHelper(0, 0, 8),
+		Returns24H: returnsHelper(hoursPerDay),
+		Returns48H: returnsHelper(2 * hoursPerDay),
+		Returns72H: returnsHelper(3 * hoursPerDay),
 	}
 	if features.includeRecord() {
 		archive.IntradayRecords = append(archive.IntradayRecords, features)
@@ -164,14 +166,15 @@ func processIntradayTimestamp(
 }
 
 func getMomentum(
+	offsetDays int,
+	lagDays int,
 	offsetHours int,
-	lagHours int,
 	timestamp time.Time,
 	close SerializableDecimal,
 	symbol GlobexCode,
 	intradayRecords intradayRecordsMap,
 ) *float64 {
-	offsetTimestamp := getAdjustedTimestamp(-offsetHours, timestamp)
+	offsetTimestamp := getAdjustedTimestamp(-offsetDays, -offsetHours, timestamp)
 	key := intradayKey{
 		symbol: symbol,
 		timestamp: offsetTimestamp,
@@ -180,8 +183,8 @@ func getMomentum(
 	if !exists {
 		return nil
 	}
-	if lagHours > 0 {
-		lagTimestamp := getAdjustedTimestamp(-lagHours, timestamp)
+	if lagDays > 0 {
+		lagTimestamp := getAdjustedTimestamp(-lagDays, 0, timestamp)
 		key := intradayKey{
 			symbol: symbol,
 			timestamp: lagTimestamp,
@@ -209,7 +212,7 @@ func getReturns(
 	intradayRecords intradayRecordsMap,
 	asset *Asset,
 ) *int {
-	horizonTimestamp := getAdjustedTimestamp(horizonHours, timestamp)
+	horizonTimestamp := getAdjustedTimestamp(0, horizonHours, timestamp)
 	key := intradayKey{
 		symbol: symbol,
 		timestamp: horizonTimestamp,
@@ -224,27 +227,22 @@ func getReturns(
 	}
 }
 
-func getAdjustedTimestamp(offsetHours int, timestamp time.Time) time.Time {
-	dayOffset := hoursPerDay
-	if offsetHours < 0 {
-		dayOffset = -dayOffset
+func getAdjustedTimestamp(offsetDays int, offsetHours int, timestamp time.Time) time.Time {
+	adjustedTimestamp := timestamp
+	if offsetDays != 0 {
+		adjustedTimestamp = adjustedTimestamp.AddDate(0, 0, offsetDays)
 	}
-	adjustedTimestamp := timestamp.Add(time.Duration(offsetHours) * time.Hour)
+	if offsetHours != 0 {
+		adjustedTimestamp = adjustedTimestamp.Add(time.Duration(offsetHours) * time.Hour)
+	}
 	for {
 		weekday := adjustedTimestamp.Weekday()
 		if weekday == time.Saturday || weekday == time.Sunday {
-			hour := adjustedTimestamp.Hour()
-			nextDay := adjustedTimestamp.Add(time.Duration(dayOffset) * time.Hour)
-			adjustedTimestamp = time.Date(
-				nextDay.Year(),
-				nextDay.Month(),
-				nextDay.Day(),
-				hour,
-				0,
-				0,
-				0,
-				nextDay.Location(),
-			)
+			addDateDays := 1
+			if adjustedTimestamp.Before(timestamp) {
+				addDateDays = -1
+			}
+			adjustedTimestamp = adjustedTimestamp.AddDate(0, 0, addDateDays)
 		} else {
 			break
 		}
@@ -252,7 +250,7 @@ func getAdjustedTimestamp(offsetHours int, timestamp time.Time) time.Time {
 	return adjustedTimestamp
 }
 
-func getFRecord(fNumber int, date time.Time, records []openInterestRecord) *openInterestRecord {
+func getFRecord(fNumber int, date time.Time, records []dailyRecord) *dailyRecord {
 	root := records[0].symbol.Root
 	index := fNumber - 1
 	if index >= len(records) {
@@ -294,7 +292,7 @@ func readDailyRecords(asset Asset) ([]openInterestRecords, int, int) {
 		if err != nil {
 			log.Fatalf("Failed to parse open interest value \"%s\" in CSV file (%s): %v", openInterestString, path, err)
 		}
-		openIntRecord := openInterestRecord{
+		openIntRecord := dailyRecord{
 			symbol: symbol,
 			close: close,
 			openInterest: openInterest,
@@ -363,10 +361,10 @@ func getDecimal(s string, path string) SerializableDecimal {
 
 func (f *FeatureRecord) includeRecord() bool {
 	features := []*float64{
-		f.Momentum8,
-		f.Momentum24,
-		f.Momentum24Lag,
-		f.Momentum48,
+		f.Momentum1D,
+		f.Momentum2D,
+		f.Momentum2DLag,
+		f.Momentum8H,
 	}
 	for _, x := range features {
 		if x != nil {
@@ -374,9 +372,9 @@ func (f *FeatureRecord) includeRecord() bool {
 		}
 	}
 	returns := []*int{
-		f.Returns24,
-		f.Returns48,
-		f.Returns72,
+		f.Returns24H,
+		f.Returns48H,
+		f.Returns72H,
 	}
 	for _, x := range returns {
 		if x != nil {

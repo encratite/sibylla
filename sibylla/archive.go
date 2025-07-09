@@ -23,13 +23,13 @@ type DailyRecord struct {
 
 type FeatureRecord struct {
 	Timestamp time.Time
-	Momentum8 *float64
-	Momentum24 *float64
-	Momentum24Lag *float64
-	Momentum48 *float64
-	Returns24 *int
-	Returns48 *int
-	Returns72 *int
+	Momentum1D *float64
+	Momentum2D *float64
+	Momentum2DLag *float64
+	Momentum8H *float64
+	Returns24H *int
+	Returns48H *int
+	Returns72H *int
 }
 
 func readArchive(path string) Archive {
