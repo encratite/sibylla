@@ -23,14 +23,20 @@ type dailyRecord struct {
 	openInterest int
 }
 
-type intradayKey struct {
+type globexDateKey struct {
+	symbol GlobexCode
+	date time.Time
+}
+
+type globexTimeKey struct {
 	symbol GlobexCode
 	timestamp time.Time
 }
 
 type openInterestMap map[time.Time][]dailyRecord
 type dailyRecordMap map[time.Time]dailyRecord
-type intradayRecordsMap map[intradayKey]SerializableDecimal
+type dailyCloseMap map[globexDateKey]SerializableDecimal
+type intradayCloseMap map[globexTimeKey]SerializableDecimal
 
 func Generate() {
 	loadConfiguration()
@@ -41,10 +47,10 @@ func Generate() {
 }
 
 func generateArchives(asset Asset) {
-	openIntRecords, includedRecords, excludedRecords := readDailyRecords(asset)
-	intradayRecords := readIntradayRecords(asset)
+	openIntRecords, dailyCloses, includedRecords, excludedRecords := readDailyRecords(asset)
+	intradayCloses := readIntradayRecords(asset)
 	intradayTimestampsMap := map[time.Time]struct{}{}
-	for key := range intradayRecords {
+	for key := range intradayCloses {
 		intradayTimestampsMap[key.timestamp] = struct{}{}
 	}
 	intradayTimestamps := []time.Time{}
@@ -57,7 +63,7 @@ func generateArchives(asset Asset) {
 	totalRecords := includedRecords + excludedRecords
 	exclusionRatio := float64(excludedRecords) / float64(totalRecords) * 100.0
 	fmt.Printf("[%s] Excluded %.2f%% of records\n", asset.Symbol, exclusionRatio)
-	fLimit := fLimitDefault
+	fLimit := 1
 	if asset.FRecords != nil {
 		fLimit = *asset.FRecords
 	}
@@ -65,7 +71,8 @@ func generateArchives(asset Asset) {
 		generateFRecords(
 			fNumber,
 			openIntRecords,
-			intradayRecords,
+			dailyCloses,
+			intradayCloses,
 			intradayTimestamps,
 			asset,
 		)
@@ -75,7 +82,8 @@ func generateArchives(asset Asset) {
 func generateFRecords(
 	fNumber int,
 	openIntRecords []openInterestRecords,
-	intradayRecords intradayRecordsMap,
+	dailyCloses dailyCloseMap,
+	intradayCloses intradayCloseMap,
 	intradayTimestamps []time.Time,
 	asset Asset,
 ) {
@@ -112,7 +120,8 @@ func generateFRecords(
 		processIntradayTimestamp(
 			timestamp,
 			dailyMap,
-			intradayRecords,
+			dailyCloses,
+			intradayCloses,
 			&asset,
 			&archive,
 		)
@@ -125,29 +134,27 @@ func generateFRecords(
 func processIntradayTimestamp(
 	timestamp time.Time,
 	dailyRecords dailyRecordMap,
-	intradayRecords intradayRecordsMap,
+	dailyCloses dailyCloseMap,
+	intradayCloses intradayCloseMap,
 	asset *Asset,
 	archive *Archive,
 ) {
-	date := time.Date(timestamp.Year(), timestamp.Month(), timestamp.Day(), 0, 0, 0, 0, timestamp.Location())
+	date := getDateFromTime(timestamp)
 	record, exists := dailyRecords[date]
 	if !exists {
 		return
 	}
 	symbol := record.symbol
-	key := intradayKey{
-		symbol: symbol,
-		timestamp: timestamp,
-	}
-	close, exists := intradayRecords[key]
+	key := getGlobexTimeKey(symbol, timestamp)
+	close, exists := intradayCloses[key]
 	if !exists {
 		return
 	}
 	momentumHelper := func (offsetDays, lagDays, offsetHours int) *float64 {
-		return getMomentum(offsetDays, lagDays, offsetHours, timestamp, close, symbol, intradayRecords)
+		return getMomentum(offsetDays, lagDays, offsetHours, timestamp, close, symbol, dailyCloses, intradayCloses)
 	}
-	returnsHelper := func (horizonHours int) *int {
-		return getReturns(horizonHours, timestamp, close, symbol, intradayRecords, asset)
+	returnsHelper := func (offsetDays, offsetHours int) *int {
+		return getReturns(offsetDays, offsetHours, timestamp, close, symbol, intradayCloses, asset)
 	}
 	closeTimestamp := timestamp.Add(time.Hour)
 	features := FeatureRecord{
@@ -156,9 +163,9 @@ func processIntradayTimestamp(
 		Momentum2D: momentumHelper(2, 0, 0),
 		Momentum2DLag: momentumHelper(2, 1, 0),
 		Momentum8H: momentumHelper(0, 0, 8),
-		Returns24H: returnsHelper(hoursPerDay),
-		Returns48H: returnsHelper(2 * hoursPerDay),
-		Returns72H: returnsHelper(3 * hoursPerDay),
+		Returns24H: returnsHelper(1, 0),
+		Returns48H: returnsHelper(2, 0),
+		Returns72H: returnsHelper(3, 0),
 	}
 	if features.includeRecord() {
 		archive.IntradayRecords = append(archive.IntradayRecords, features)
@@ -172,24 +179,30 @@ func getMomentum(
 	timestamp time.Time,
 	close SerializableDecimal,
 	symbol GlobexCode,
-	intradayRecords intradayRecordsMap,
+	dailyCloses dailyCloseMap,
+	intradayCloses intradayCloseMap,
 ) *float64 {
 	offsetTimestamp := getAdjustedTimestamp(-offsetDays, -offsetHours, timestamp)
-	key := intradayKey{
-		symbol: symbol,
-		timestamp: offsetTimestamp,
-	}
-	offsetClose, exists := intradayRecords[key]
-	if !exists {
-		return nil
+	var offsetClose SerializableDecimal
+	if offsetHours == 0 {
+		key := getGlobexDateKey(symbol, offsetTimestamp)
+		dailyClose, exists := dailyCloses[key]
+		if !exists {
+			return nil
+		}
+		offsetClose = dailyClose
+	} else {
+		key := getGlobexTimeKey(symbol, offsetTimestamp)
+		intradayClose, exists := intradayCloses[key]
+		if !exists {
+			return nil
+		}
+		offsetClose = intradayClose
 	}
 	if lagDays > 0 {
 		lagTimestamp := getAdjustedTimestamp(-lagDays, 0, timestamp)
-		key := intradayKey{
-			symbol: symbol,
-			timestamp: lagTimestamp,
-		}
-		lagClose, exists := intradayRecords[key]
+		key := getGlobexDateKey(symbol, lagTimestamp)
+		lagClose, exists := dailyCloses[key]
 		if !exists {
 			return nil
 		}
@@ -205,19 +218,17 @@ func getMomentum(
 }
 
 func getReturns(
-	horizonHours int,
+	offsetDays int,
+	offsetHours int,
 	timestamp time.Time,
 	close SerializableDecimal,
 	symbol GlobexCode,
-	intradayRecords intradayRecordsMap,
+	intradayCloses intradayCloseMap,
 	asset *Asset,
 ) *int {
-	horizonTimestamp := getAdjustedTimestamp(0, horizonHours, timestamp)
-	key := intradayKey{
-		symbol: symbol,
-		timestamp: horizonTimestamp,
-	}
-	horizonClose, exists := intradayRecords[key]
+	adjustedTimestamp := getAdjustedTimestamp(offsetDays, offsetHours, timestamp)
+	key := getGlobexTimeKey(symbol, adjustedTimestamp)
+	horizonClose, exists := intradayCloses[key]
 	if exists {
 		delta := horizonClose.Sub(close.Decimal)
 		ticks := int(delta.Div(asset.TickSize.Decimal).IntPart())
@@ -229,23 +240,24 @@ func getReturns(
 
 func getAdjustedTimestamp(offsetDays int, offsetHours int, timestamp time.Time) time.Time {
 	adjustedTimestamp := timestamp
-	if offsetDays != 0 {
-		adjustedTimestamp = adjustedTimestamp.AddDate(0, 0, offsetDays)
+	direction := 1
+	if offsetDays < 0 {
+		offsetDays = -offsetDays
+		direction = -1
+	}
+	for range offsetDays {
+		adjustedTimestamp = adjustedTimestamp.AddDate(0, 0, direction)
+		for {
+			weekday := adjustedTimestamp.Weekday()
+			if weekday == time.Saturday || weekday == time.Sunday {
+				adjustedTimestamp = adjustedTimestamp.AddDate(0, 0, direction)
+			} else {
+				break
+			}
+		}
 	}
 	if offsetHours != 0 {
 		adjustedTimestamp = adjustedTimestamp.Add(time.Duration(offsetHours) * time.Hour)
-	}
-	for {
-		weekday := adjustedTimestamp.Weekday()
-		if weekday == time.Saturday || weekday == time.Sunday {
-			addDateDays := 1
-			if adjustedTimestamp.Before(timestamp) {
-				addDateDays = -1
-			}
-			adjustedTimestamp = adjustedTimestamp.AddDate(0, 0, addDateDays)
-		} else {
-			break
-		}
 	}
 	return adjustedTimestamp
 }
@@ -260,10 +272,11 @@ func getFRecord(fNumber int, date time.Time, records []dailyRecord) *dailyRecord
 	return &records[index]
 }
 
-func readDailyRecords(asset Asset) ([]openInterestRecords, int, int) {
+func readDailyRecords(asset Asset) ([]openInterestRecords, dailyCloseMap, int, int) {
 	path := getBarchartCsvPath(asset, "D1")
 	columns := []string{"symbol", "time", "close", "open_interest"}
 	openIntMap := openInterestMap{}
+	dailyCloses := dailyCloseMap{}
 	includedRecords := 0
 	excludedRecords := 0
 	callback := func(values []string) {
@@ -298,6 +311,8 @@ func readDailyRecords(asset Asset) ([]openInterestRecords, int, int) {
 			openInterest: openInterest,
 		}
 		openIntMap[date] = append(openIntMap[date], openIntRecord)
+		key := getGlobexDateKey(symbol, date)
+		dailyCloses[key] = close
 		includedRecords += 1
 	}
 	readCsv(path, columns, callback)
@@ -315,13 +330,13 @@ func readDailyRecords(asset Asset) ([]openInterestRecords, int, int) {
 	sort.Slice(openIntRecords, func (i, j int) bool {
 		return openIntRecords[i].date.Before(openIntRecords[j].date)
 	})
-	return openIntRecords, includedRecords, excludedRecords
+	return openIntRecords, dailyCloses, includedRecords, excludedRecords
 }
 
-func readIntradayRecords(asset Asset) intradayRecordsMap {
+func readIntradayRecords(asset Asset) intradayCloseMap {
 	path := getBarchartCsvPath(asset, "H1")
 	columns := []string{"symbol", "time", "close"}
-	recordsMap := intradayRecordsMap{}
+	recordsMap := intradayCloseMap{}
 	callback := func(values []string) {
 		symbol, err := parseGlobex(values[0])
 		if err != nil {
@@ -332,10 +347,7 @@ func readIntradayRecords(asset Asset) intradayRecordsMap {
 			return
 		}
 		close := getDecimal(values[2], path)
-		key := intradayKey{
-			symbol: symbol,
-			timestamp: timestamp,
-		}
+		key := getGlobexTimeKey(symbol, timestamp)
 		recordsMap[key] = close
 	}
 	readCsv(path, columns, callback)
@@ -382,4 +394,19 @@ func (f *FeatureRecord) includeRecord() bool {
 		}
 	}
 	return false
+}
+
+func getGlobexDateKey(symbol GlobexCode, timestamp time.Time) globexDateKey {
+	date := getDateFromTime(timestamp)
+	return globexDateKey{
+		symbol: symbol,
+		date: date,
+	}
+}
+
+func getGlobexTimeKey(symbol GlobexCode, timestamp time.Time) globexTimeKey {
+	return globexTimeKey{
+		symbol: symbol,
+		timestamp: timestamp,
+	}
 }

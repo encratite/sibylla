@@ -38,6 +38,11 @@ func getTimeString(timestamp time.Time) string {
 	return timestamp.Format(timestampLayout)
 }
 
+func getDateFromTime(timestamp time.Time) time.Time {
+	date := time.Date(timestamp.Year(), timestamp.Month(), timestamp.Day(), 0, 0, 0, 0, timestamp.Location())
+	return date
+}
+
 func parallelForEach[T any](elements []T, callback func(T)) {
 	workers := runtime.NumCPU()
 	elementChan := make(chan T, len(elements))
