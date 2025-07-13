@@ -32,6 +32,12 @@ type FeatureRecord struct {
 	Returns72H *int
 }
 
+type featureDefinition struct {
+	name string
+	selectFloat func (*FeatureRecord) *float64
+	selectInt func (*FeatureRecord) *int
+}
+
 func readArchive(path string) Archive {
 	file, err := os.Open(path)
 	if err != nil {
@@ -73,4 +79,46 @@ func writeArchive(path string, archive *Archive) int64 {
 	}
 	size := fileInfo.Size()
 	return size
+}
+
+func getFeatureDefinitions() []featureDefinition {
+	definitions := []featureDefinition{
+		featureDefinition{
+			name: "momentum1D",
+			selectFloat: func (f *FeatureRecord) *float64 {
+				return f.Momentum1D
+			},
+		},
+		featureDefinition{
+			name: "momentum2D",
+			selectFloat: func (f *FeatureRecord) *float64 {
+				return f.Momentum2D
+			},
+		},
+		featureDefinition{
+			name: "momentum2DLag",
+			selectFloat: func (f *FeatureRecord) *float64 {
+				return f.Momentum2DLag
+			},
+		},
+		featureDefinition{
+			name: "returns24H",
+			selectInt: func (f *FeatureRecord) *int {
+				return f.Returns24H
+			},
+		},
+		featureDefinition{
+			name: "returns48H",
+			selectInt: func (f *FeatureRecord) *int {
+				return f.Returns48H
+			},
+		},
+		featureDefinition{
+			name: "returns72H",
+			selectInt: func (f *FeatureRecord) *int {
+				return f.Returns72H
+			},
+		},
+	}
+	return definitions
 }

@@ -15,10 +15,13 @@ func main() {
 			debug.PrintStack()
 		}
 	}()
-	generate := flag.Bool("generate", true, "Generate .gob files from Barchart .csv files")
+	generate := flag.Bool("generate", false, "Generate .gob archive files from Barchart .csv files")
+	validateArchive := flag.String("validate", "", "Load the archive file with the specified symbol and statistically analyze its contents to make sure that the data are consistent")
 	flag.Parse()
-	if *generate {
+	if generate != nil && *generate {
 		sibylla.Generate()
+	} else if validateArchive != nil && *validateArchive != "" {
+		sibylla.ValidateArchive(*validateArchive)
 	} else {
 		flag.Usage()
 	}

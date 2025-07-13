@@ -12,6 +12,9 @@ type Configuration struct {
 	GobPath string `yaml:"gobPath"`
 	CutoffDate SerializableDate `yaml:"cutoffDate"`
 	OverwriteArchives bool `yaml:"overwriteArchives"`
+	FontPath string `yaml:"fontPath"`
+	FontName string `yaml:"fontName"`
+	TempPath string `yaml:"tempPath"`
 }
 
 type SerializableDate struct {
