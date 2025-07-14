@@ -14,6 +14,7 @@ type Configuration struct {
 	OverwriteArchives bool `yaml:"overwriteArchives"`
 	FontPath string `yaml:"fontPath"`
 	FontName string `yaml:"fontName"`
+	WebPath string `yaml:"webPath"`
 	TempPath string `yaml:"tempPath"`
 }
 

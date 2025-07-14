@@ -5,11 +5,17 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/url"
 	"os"
 	"runtime"
 	"sync"
 	"time"
 )
+
+type taskTuple[T any] struct {
+	index int
+	element T
+}
 
 const dateLayout = "2006-01-02"
 const timestampLayout = "2006-01-02 15:04"
@@ -63,10 +69,35 @@ func parallelForEach[T any](elements []T, callback func(T)) {
 	wg.Wait()
 }
 
+func parallelMap[A, B any](elements []A, callback func(A) B) []B {
+	workers := runtime.NumCPU()
+	elementChan := make(chan taskTuple[A], len(elements))
+	for i, x := range elements {
+		elementChan <- taskTuple[A]{
+			index: i,
+			element: x,
+		}
+	}
+	close(elementChan)
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	output := make([]B, len(elements))
+	for range workers {
+		go func() {
+			defer wg.Done()
+			for task := range elementChan {
+				output[task.index] = callback(task.element)
+			}
+		}()
+	}
+	wg.Wait()
+	return output
+}
+
 func readFile(path string) []byte {
 	content, err := os.ReadFile(path)
 	if err != nil {
-		log.Fatal("Failed to read file:", err)
+		log.Fatalf("Failed to read file (%s): %v", path, err)
 	}
 	return content
 }
@@ -114,4 +145,8 @@ func getRateOfChange(a, b float64) (float64, bool) {
 		return 0, false
 	}
 	return a / b - 1, true
+}
+
+func getFileURL(path string) string {
+	return "file:///" + url.PathEscape(path)
 }

@@ -35,7 +35,6 @@ type FeatureRecord struct {
 type featureDefinition struct {
 	name string
 	selectFloat func (*FeatureRecord) *float64
-	selectInt func (*FeatureRecord) *int
 }
 
 func readArchive(path string) Archive {
@@ -103,22 +102,31 @@ func getFeatureDefinitions() []featureDefinition {
 		},
 		featureDefinition{
 			name: "returns24H",
-			selectInt: func (f *FeatureRecord) *int {
-				return f.Returns24H
+			selectFloat: func (f *FeatureRecord) *float64 {
+				return selectIntToFloat(f.Returns24H)
 			},
 		},
 		featureDefinition{
 			name: "returns48H",
-			selectInt: func (f *FeatureRecord) *int {
-				return f.Returns48H
+			selectFloat: func (f *FeatureRecord) *float64 {
+				return selectIntToFloat(f.Returns48H)
 			},
 		},
 		featureDefinition{
 			name: "returns72H",
-			selectInt: func (f *FeatureRecord) *int {
-				return f.Returns72H
+			selectFloat: func (f *FeatureRecord) *float64 {
+				return selectIntToFloat(f.Returns72H)
 			},
 		},
 	}
 	return definitions
+}
+
+func selectIntToFloat(i *int) *float64 {
+	if i != nil {
+		f := float64(*i)
+		return &f
+	} else {
+		return nil
+	}
 }

@@ -3,7 +3,6 @@ package sibylla
 import (
 	"image/color"
 	"log"
-	"os"
 	"time"
 
 	"golang.org/x/image/font/opentype"
@@ -15,17 +14,14 @@ import (
 
 type YearlyTicks struct{}
 
-func renderDailyRecords(title string, dailyRecords []DailyRecord, path string) {
-	plotterData := make(plotter.XYs, len(dailyRecords))
-	for i, dataPoint := range dailyRecords {
+func plotDailyRecords(title string, records []DailyRecord, path string) {
+	plotterData := make(plotter.XYs, len(records))
+	for i, dataPoint := range records {
 		plotterData[i].X = timeToFloat(dataPoint.Date)
 		float, _ := dataPoint.Close.Float64()
 		plotterData[i].Y = float
 	}
-	ttfData, err := os.ReadFile(configuration.FontPath)
-	if err != nil {
-		log.Fatal("Failed to read TTF file:", err)
-	}
+	ttfData := readFile(configuration.FontPath)
 	openTypeFont, err := opentype.Parse(ttfData)
 	if err != nil {
 		log.Fatal("OpenType failed to parse TTF file:", err)
@@ -63,6 +59,26 @@ func renderDailyRecords(title string, dailyRecords []DailyRecord, path string) {
 	if err != nil {
 		log.Fatal("Failed to save plot:", err)
 	}	
+}
+
+func plotFeatureHistogram(title string, stdDev float64, values []float64, path string) {
+	plotterValues := make(plotter.Values, len(values))
+	copy(plotterValues, values)
+	p := plot.New()
+	p.Title.Text = title
+	h, err := plotter.NewHist(plotterValues, 50)
+	if err != nil {
+		panic(err)
+	}
+	h.Normalize(1)
+	p.Add(h)
+	xLimit := 6 * stdDev
+	p.X.Min = - xLimit
+	p.X.Max = xLimit
+	err = p.Save(8 * vg.Inch, 4 * vg.Inch, path)
+	if err != nil {
+		panic(err)
+	}
 }
 
 func (YearlyTicks) Ticks(min, max float64) []plot.Tick {
