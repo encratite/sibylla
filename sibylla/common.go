@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"net/url"
 	"os"
 	"runtime"
 	"sync"
@@ -102,6 +101,14 @@ func readFile(path string) []byte {
 	return content
 }
 
+func writeFile(path, data string) {
+	bytes := []byte(data)
+	err := os.WriteFile(path, bytes, 0644)
+	if err != nil {
+		log.Fatalf("Failed to write file (%s): %v", path, err)
+	}
+}
+
 func readCsv(path string, columns []string, callback func([]string)) {
 	file, err := os.Open(path)
 	if err != nil {
@@ -145,8 +152,4 @@ func getRateOfChange(a, b float64) (float64, bool) {
 		return 0, false
 	}
 	return a / b - 1, true
-}
-
-func getFileURL(path string) string {
-	return "file:///" + url.PathEscape(path)
 }

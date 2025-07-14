@@ -18,11 +18,14 @@ require (
 	github.com/gonum/matrix v0.0.0-20181209220409-c518dec07be9 // indirect
 	github.com/gonum/stat v0.0.0-20181125101827-41a0da705a5b // indirect
 	github.com/google/btree v1.1.3 // indirect
+	github.com/jchv/go-webview2 v0.0.0-20250406165304-0bcfea011047 // indirect
+	github.com/jchv/go-winloader v0.0.0-20250406163304-c1995be93bd1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/segmentio/fasthash v1.0.3 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
 	golang.org/x/exp v0.0.0-20220218215828-6cf2b201936e // indirect
 	golang.org/x/image v0.25.0 // indirect
+	golang.org/x/sys v0.30.0 // indirect
 	golang.org/x/text v0.23.0 // indirect
 	gonum.org/v1/plot v0.16.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect

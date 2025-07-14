@@ -14,7 +14,7 @@ import (
 
 type YearlyTicks struct{}
 
-func plotDailyRecords(title string, records []DailyRecord, path string) {
+func plotDailyRecords(records []DailyRecord, path string) {
 	plotterData := make(plotter.XYs, len(records))
 	for i, dataPoint := range records {
 		plotterData[i].X = timeToFloat(dataPoint.Date)
@@ -38,7 +38,6 @@ func plotDailyRecords(title string, records []DailyRecord, path string) {
 	font.DefaultCache.Add(fontFace)
 	plot.DefaultFont = defaultFont
 	p := plot.New()
-	p.Title.Text = title
 	p.X.Label.Text = "Date"
 	p.Y.Label.Text = "Close"
 	p.X.Padding = -1
@@ -61,11 +60,10 @@ func plotDailyRecords(title string, records []DailyRecord, path string) {
 	}	
 }
 
-func plotFeatureHistogram(title string, stdDev float64, values []float64, path string) {
+func plotFeatureHistogram(stdDev float64, values []float64, path string) {
 	plotterValues := make(plotter.Values, len(values))
 	copy(plotterValues, values)
 	p := plot.New()
-	p.Title.Text = title
 	h, err := plotter.NewHist(plotterValues, 50)
 	if err != nil {
 		panic(err)

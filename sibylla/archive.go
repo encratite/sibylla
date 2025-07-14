@@ -82,37 +82,37 @@ func writeArchive(path string, archive *Archive) int64 {
 
 func getFeatureDefinitions() []featureDefinition {
 	definitions := []featureDefinition{
-		featureDefinition{
+		{
 			name: "momentum1D",
 			selectFloat: func (f *FeatureRecord) *float64 {
 				return f.Momentum1D
 			},
 		},
-		featureDefinition{
+		{
 			name: "momentum2D",
 			selectFloat: func (f *FeatureRecord) *float64 {
 				return f.Momentum2D
 			},
 		},
-		featureDefinition{
+		{
 			name: "momentum2DLag",
 			selectFloat: func (f *FeatureRecord) *float64 {
 				return f.Momentum2DLag
 			},
 		},
-		featureDefinition{
+		{
 			name: "returns24H",
 			selectFloat: func (f *FeatureRecord) *float64 {
 				return selectIntToFloat(f.Returns24H)
 			},
 		},
-		featureDefinition{
+		{
 			name: "returns48H",
 			selectFloat: func (f *FeatureRecord) *float64 {
 				return selectIntToFloat(f.Returns48H)
 			},
 		},
-		featureDefinition{
+		{
 			name: "returns72H",
 			selectFloat: func (f *FeatureRecord) *float64 {
 				return selectIntToFloat(f.Returns72H)
