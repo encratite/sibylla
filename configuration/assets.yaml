@@ -101,6 +101,7 @@
 - symbol: AW
   name: Bloomberg Commodity Index
   barchartSymbol: AH
+  cutoffDate: 2011-06-01
   featuresOnly: true
   currency: USD
   tickSize: 0.01
