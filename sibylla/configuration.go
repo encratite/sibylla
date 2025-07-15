@@ -16,6 +16,7 @@ type Configuration struct {
 	FontName string `yaml:"fontName"`
 	WebPath string `yaml:"webPath"`
 	TempPath string `yaml:"tempPath"`
+	IconPath string `yaml:"iconPath"`
 }
 
 type SerializableDate struct {

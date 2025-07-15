@@ -5,8 +5,10 @@ import (
 	"log"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/jchv/go-webview2"
+	"github.com/lxn/win"
 )
 
 const templateFilename = "template.html"
@@ -20,7 +22,6 @@ func runBrowser(title, script string, model any) {
 		Title: title,
 		Width: 1280,
 		Height: 960,
-		IconId: 1,
 		Center: true,
 	}
 	options := webview2.WebViewOptions{
@@ -33,6 +34,24 @@ func runBrowser(title, script string, model any) {
 		log.Fatalln("Failed to load WebView")
 	}
 	defer w.Destroy()
+	iconPath := configuration.IconPath
+	iconPathUTF16Ptr, err := syscall.UTF16PtrFromString(iconPath)
+	if err != nil {
+		log.Fatal("Failed to convert string:", err)
+	}
+	hIcon := win.HICON(win.LoadImage(
+		0,
+		iconPathUTF16Ptr,
+		win.IMAGE_ICON,
+		0,
+		0,
+		win.LR_LOADFROMFILE | win.LR_DEFAULTSIZE,
+	))
+	if hIcon == 0 {
+		log.Fatalf("Failed to load icon from %s", iconPath)
+	}
+	hWnd := w.Window()
+	win.SendMessage(win.HWND(hWnd), win.WM_SETICON, 0, uintptr(hIcon))
 	scriptPath := filepath.Join(configuration.WebPath, script)
 	html := getTemplateHtml(scriptPath, model)
 	htmlPath := filepath.Join(configuration.TempPath, templateFilename)

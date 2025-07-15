@@ -20,6 +20,7 @@ require (
 	github.com/google/btree v1.1.3 // indirect
 	github.com/jchv/go-webview2 v0.0.0-20250406165304-0bcfea011047 // indirect
 	github.com/jchv/go-winloader v0.0.0-20250406163304-c1995be93bd1 // indirect
+	github.com/lxn/win v0.0.0-20210218163916-a377121e959e // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/segmentio/fasthash v1.0.3 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
