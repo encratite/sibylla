@@ -14,24 +14,32 @@ function renderArchiveUI() {
 		const container = createElement("div", topLevel, {
 			className: "feature"
 		});
+		const addMissingValueStyle = valueCell => {
+			if (feature.nilRatio >= 0.1) {
+				valueCell.style.color = "#ff0000";
+			}
+		};
 		const properties = [
 			["Property", feature.name],
-			["Missing Values", getPercentage(feature.nilRatio)],
+			["Missing Values", getPercentage(feature.nilRatio), addMissingValueStyle],
 			["Minimum", roundValue(feature.min)],
 			["Maximum", roundValue(feature.max)],
 			["Mean", roundValue(feature.mean)],
 			["Standard Deviation", roundValue(feature.stdDev)],
-
 		];
 		const table = createElement("table", container);
 		properties.forEach(definition => {
 			const description = definition[0];
 			const value = definition[1];
+			const handler = definition[2];
 			const row = createElement("tr", table);
 			const descriptionCell = createElement("td", row);
 			descriptionCell.textContent = `${description}:`;
 			const valueCell = createElement("td", row);
 			valueCell.textContent = value;
+			if (handler != null) {
+				handler(valueCell);
+			}
 		});
 		createElement("img", container, {
 			src: feature.plot
