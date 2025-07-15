@@ -19,6 +19,131 @@
   brokerFee: 0.85
   exchangeFee: 1.40
   spread: 3
+- symbol: YM
+  name: E-Mini Dow Jones Industrial Average
+  currency: USD
+  tickSize: 1.0
+  tickValue: 5.0
+  margin: 7033.60
+  brokerFee: 0.85
+  exchangeFee: 1.40
+  spread: 2
+- symbol: RTY
+  name: Russell 2000 E-Mini
+  barchartSymbol: QR
+  legacyCutoff: QRH03
+  currency: USD
+  tickSize: 0.1
+  tickValue: 5.0
+  margin: 5277.26
+  brokerFee: 0.85
+  exchangeFee: 1.40
+  spread: 2
+
+# European indexes
+- symbol: FDXM
+  name: Mini-DAX
+  barchartSymbol: DY
+  legacyCutoff: DYM02
+  currency: EUR
+  tickSize: 1.0
+  tickValue: 5.0
+  margin: 4723.66
+  brokerFee: 0.85
+  exchangeFee: 0.26
+  spread: 2
+- symbol: FESB
+  name: Stoxx Europe 600 Banks
+  barchartSymbol: FA
+  currency: EUR
+  tickSize: 0.1
+  tickValue: 5.0
+  margin: 909.881
+  brokerFee: 0.85
+  exchangeFee: 0.26
+  spread: 2
+- symbol: FESX
+  name: Euro Stoxx 50
+  barchartSymbol: FX
+  legacyCutoff: FXU02
+  currency: EUR
+  tickSize: 1.0
+  tickValue: 10.0
+  margin: 3263.13
+  brokerFee: 0.85
+  exchangeFee: 0.26
+  spread: 2
+
+# Other indexes
+- symbol: MNI
+  name: Nikkei 225 Yen
+  barchartSymbol: NL
+  includeMonths: [H, M, U, Z]
+  featuresOnly: true
+  currency: JPY
+  tickSize: 5.0
+  tickValue: 250.0
+  margin: 118415.91
+  brokerFee: 0.85
+  exchangeFee: 1.40
+  spread: 2
+- symbol: FMWO
+  name: MSCI World Index
+  barchartSymbol: AC
+  featuresOnly: true
+  currency: EUR
+  tickSize: 0.1
+  tickValue: 1.0
+  margin: 9235.49
+  brokerFee: 0.85
+  exchangeFee: 0.26
+  spread: 2
+- symbol: AW
+  name: Bloomberg Commodity Index
+  barchartSymbol: AH
+  featuresOnly: true
+  currency: USD
+  tickSize: 0.01
+  tickValue: 1.0
+  margin: 798.944
+  brokerFee: 0.85
+  exchangeFee: 0.77
+  spread: 10
+
+# Metals
+- symbol: GC
+  name: Gold
+  legacyCutoff: GCG06
+  currency: USD
+  tickSize: 0.01
+  tickValue: 10.0
+  margin: 27136.68
+  brokerFee: 0.85
+  exchangeFee: 1.62
+  spread: 6
+- symbol: SI
+  name: Silver
+  legacyCutoff: SIH03
+  includeMonths: [F, G, J, M, Q, V, X]
+  currency: USD
+  tickSize: 0.005
+  tickValue: 25.0
+  margin: 17484.375
+  brokerFee: 0.85
+  exchangeFee: 1.02
+  spread: 4
+- symbol: PL
+  name: Platinum
+  legacyCutoff: PLN01
+  excludeMonths: [F, J, N, V]
+  cutoffDate: 2002-08-08
+  currency: USD
+  tickSize: 0.1
+  tickValue: 5.0
+  margin: 4317.82
+  brokerFee: 0.85
+  exchangeFee: 1.62
+  spread: 34
 
 # Energies
 - symbol: CL
@@ -33,3 +158,263 @@
   brokerFee: 0.85
   exchangeFee: 1.52
   spread: 1
+- symbol: NG
+  name: Natural Gas
+  legacyCutoff: NGF04
+  fRecords: 3
+  currency: USD
+  tickSize: 0.001
+  tickValue: 10.0
+  margin: 8891.33
+  brokerFee: 0.85
+  exchangeFee: 1.62
+  spread: 1
+- symbol: RB
+  name: Gasoline RBOB
+  legacyCutoff: RBJ06
+  currency: USD
+  tickSize: 0.0001
+  tickValue: 4.20
+  margin: 22050
+  brokerFee: 0.85
+  exchangeFee: 1.52
+  spread: 1
+- symbol: HO
+  name: Heating Oil
+  legacyCutoff: HOG01
+  includeMonths: [H, K, N, U, Z]
+  featuresOnly: true
+  currency: USD
+  tickSize: 0.0001
+  tickValue: 4.20
+  margin: 25720.80
+  brokerFee: 0.85
+  exchangeFee: 1.52
+  spread: 1
+
+# Currencies
+- symbol: 6A
+  name: Australian Dollar
+  barchartSymbol: A6
+  legacyCutoff: A6H01
+  includeMonths: [H, M, U, Z]
+  cutoffDate: 2001-03-27
+  currency: USD
+  tickSize: 0.00005
+  tickValue: 5
+  margin: 2614.50
+  brokerFee: 0.50
+  exchangeFee: 0.26
+  spread: 3
+- symbol: 6B
+  name: British Pound
+  barchartSymbol: B6
+  legacyCutoff: B6M03
+  firstFilterContract: B6J17
+  includeMonths: [H, M, U, Z]
+  currency: USD
+  tickSize: 0.0001
+  tickValue: 6.25
+  margin: 1911.86
+  brokerFee: 0.50
+  exchangeFee: 0.26
+  spread: 3
+- symbol: 6C
+  name: Canadian Dollar
+  barchartSymbol: D6
+  legacyCutoff: D6H01
+  firstFilterContract: D6J17
+  includeMonths: [H, M, U, Z]
+  currency: USD
+  tickSize: 0.00005
+  tickValue: 5
+  margin: 1627.51
+  brokerFee: 0.50
+  exchangeFee: 0.26
+  spread: 2
+- symbol: 6E
+  name: Euro FX
+  barchartSymbol: E6
+  legacyCutoff: E6H02
+  firstFilterContract: E6J17
+  includeMonths: [H, M, U, Z]
+  cutoffDate: 2001-11-24
+  currency: USD
+  tickSize: 0.00005
+  tickValue: 6.25
+  margin: 6777.39
+  brokerFee: 0.50
+  exchangeFee: 0.26
+  spread: 2
+- symbol: 6J
+  name: Japanese Yen
+  barchartSymbol: J6
+  legacyCutoff: J6Z01
+  firstFilterContract: J6J17
+  includeMonths: [H, M, U, Z]
+  currency: USD
+  tickSize: 0.0000005
+  tickValue: 6.25
+  margin: 2901.75
+  brokerFee: 0.50
+  exchangeFee: 0.26
+  spread: 2
+- symbol: 6N
+  name: New Zealand Dollar
+  barchartSymbol: N6
+  currency: USD
+  tickSize: 0.00005
+  tickValue: 5
+  margin: 2573.30
+  brokerFee: 0.50
+  exchangeFee: 0.26
+  spread: 1
+- symbol: 6S
+  name: Swiss Francs
+  barchartSymbol: S6
+  legacyCutoff: S6H02
+  firstFilterContract: S6J17
+  includeMonths: [H, M, U, Z]
+  currency: USD
+  tickSize: 0.00005
+  tickValue: 6.25
+  margin: 6210.00
+  brokerFee: 0.50
+  exchangeFee: 0.26
+  spread: 2
+- symbol: 6Z
+  name: South African Rand
+  barchartSymbol: T6
+  cutoffDate: 2000-05-10
+  includeMonths: [H, M, U, Z]
+  featuresOnly: true
+  currency: USD
+  tickSize: 0.000025
+  tickValue: 12.50
+  margin: 2207.73
+  brokerFee: 0.50
+  exchangeFee: 0.26
+  spread: 2
+
+# US bonds
+- symbol: ZB
+  name: 30-Year T-Bond
+  legacyCutoff: ZBM02
+  cutoffDate: 2004-11-12
+  currency: USD
+  tickSize: 0.03125
+  tickValue: 31.25
+  margin: 5324.11
+  brokerFee: 0.85
+  exchangeFee: 0.89
+  spread: 1
+- symbol: ZN
+  name: 10-Year T-Note
+  legacyCutoff: ZNU01
+  cutoffDate: 2004-11-11
+  currency: USD
+  tickSize: 0.03125
+  tickValue: 15.625
+  margin: 2692.04
+  brokerFee: 0.85
+  exchangeFee: 0.89
+  spread: 1
+- symbol: ZF
+  name: 5-Year T-Note
+  legacyCutoff: ZFM02
+  currency: USD
+  tickSize: 0.03125
+  tickValue: 7.8125
+  margin: 1807.61
+  brokerFee: 0.85
+  exchangeFee: 0.67
+  spread: 1
+- symbol: ZT
+  name: 2-Year T-Note
+  legacyCutoff: ZTH02
+  currency: USD
+  tickSize: 0.00390625
+  tickValue: 7.8125
+  margin: 1172.43
+  brokerFee: 0.85
+  exchangeFee: 0.67
+  spread: 1
+
+# German bonds
+- symbol: FGBL
+  name: Euro Bund
+  barchartSymbol: GG
+  legacyCutoff: GGZ01
+  currency: EUR
+  tickSize: 0.01
+  tickValue: 10
+  margin: 2911.52
+  brokerFee: 0.85
+  exchangeFee: 0.22
+  spread: 1
+- symbol: FGBM
+  name: Euro Bobl
+  barchartSymbol: HR
+  legacyCutoff: HRZ01
+  currency: EUR
+  tickSize: 0.01
+  tickValue: 10
+  margin: 1968.71
+  brokerFee: 0.85
+  exchangeFee: 0.22
+  spread: 1
+- symbol: FGBS
+  name: Euro Schatz
+  barchartSymbol: HF
+  legacyCutoff: HFZ01
+  currency: EUR
+  tickSize: 0.005
+  tickValue: 5
+  margin: 635.127
+  brokerFee: 0.85
+  exchangeFee: 0.22
+  spread: 1
+
+# Volatility
+- symbol: VX
+  name: S&P 500 VIX
+  barchartSymbol: VI
+  currency: USD
+  tickSize: 0.05
+  tickValue: 50
+  margin: 8572.20
+  brokerFee: 0.85
+  exchangeFee: 1.51
+  spread: 1
+- symbol: V2TX
+  name: VSTOXX
+  barchartSymbol: DV
+  currency: EUR
+  tickSize: 0.5
+  tickValue: 5
+  margin: 1201.75
+  brokerFee: 0.85
+  exchangeFee: 0.22
+  spread: 1
+
+# Crypto
+- symbol: MBT
+  name: Micro Bitcoin
+  barchartSymbol: BA
+  currency: USD
+  tickSize: 5
+  tickValue: 0.5
+  margin: 3375.13
+  brokerFee: 2.25
+  exchangeFee: 2.52
+  spread: 2
+- symbol: MET
+  name: Micro Ether
+  barchartSymbol: TA
+  currency: USD
+  tickSize: 0.5
+  tickValue: 0.05
+  margin: 189.508
+  brokerFee: 0.20
+  exchangeFee: 0.22
+  spread: 2

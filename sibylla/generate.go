@@ -47,6 +47,14 @@ func Generate() {
 }
 
 func generateArchives(asset Asset) {
+	firstArchivePath := getArchivePath(asset.Symbol, 1)
+	if !configuration.OverwriteArchives {
+		_, err := os.Stat(firstArchivePath)
+		if !os.IsNotExist(err) {
+			fmt.Printf("[%s] Archive already exists, skipping: %s\n", asset.Symbol, firstArchivePath)
+			return
+		}
+	}
 	openIntRecords, dailyCloses, includedRecords, excludedRecords := readDailyRecords(asset)
 	intradayCloses := readIntradayRecords(asset)
 	intradayTimestampsMap := map[time.Time]struct{}{}
@@ -87,16 +95,7 @@ func generateFRecords(
 	intradayTimestamps []time.Time,
 	asset Asset,
 ) {
-	suffix := fmt.Sprintf("F%d", fNumber)
-	fileName := fmt.Sprintf("%s.%s.%s", asset.Symbol, suffix, archiveExtension)
-	path := filepath.Join(configuration.GobPath, fileName)
-	if !configuration.OverwriteArchives {
-		_, err := os.Stat(path)
-		if !os.IsNotExist(err) {
-			fmt.Printf("[%s] Archive already exists, skipping: %s\n", asset.Symbol, path)
-			return
-		}
-	}
+	path := getArchivePath(asset.Symbol, fNumber)
 	dailyMap := dailyRecordMap{}
 	dailyRecords := []DailyRecord{}
 	for _, datedRecords := range openIntRecords {
@@ -409,4 +408,11 @@ func getGlobexTimeKey(symbol GlobexCode, timestamp time.Time) globexTimeKey {
 		symbol: symbol,
 		timestamp: timestamp,
 	}
+}
+
+func getArchivePath(symbol string, fNumber int) string {
+	suffix := fmt.Sprintf("F%d", fNumber)
+	fileName := fmt.Sprintf("%s.%s.%s", symbol, suffix, archiveExtension)
+	path := filepath.Join(configuration.GobPath, fileName)
+	return path
 }
