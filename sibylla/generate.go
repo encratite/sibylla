@@ -38,17 +38,33 @@ type dailyRecordMap map[time.Time]dailyRecord
 type dailyCloseMap map[globexDateKey]SerializableDecimal
 type intradayCloseMap map[globexTimeKey]SerializableDecimal
 
-func Generate() {
+func Generate(symbol *string) {
 	loadConfiguration()
 	start := time.Now()
-	parallelForEach(*assets, generateArchives)
+	if symbol == nil {
+		parallelForEach(*assets, func (asset Asset) {
+			generateArchives(asset, false)
+		})
+	} else {
+		generateSingleArchive(*symbol)
+	}
 	delta := time.Since(start)
 	fmt.Printf("Generated archives in %.2f s\n", delta.Seconds())
 }
 
-func generateArchives(asset Asset) {
+func generateSingleArchive(symbol string) {
+	for _, asset := range *assets {
+		if asset.Symbol == symbol {
+			generateArchives(asset, true)
+			return
+		}
+	}
+	log.Fatalf("Unable to find an asset matching symbol %s", symbol)
+}
+
+func generateArchives(asset Asset, forceOverwrite bool) {
 	firstArchivePath := getArchivePath(asset.Symbol, 1)
-	if !configuration.OverwriteArchives {
+	if !forceOverwrite && !configuration.OverwriteArchives {
 		_, err := os.Stat(firstArchivePath)
 		if !os.IsNotExist(err) {
 			fmt.Printf("[%s] Archive already exists, skipping: %s\n", asset.Symbol, firstArchivePath)

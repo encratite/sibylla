@@ -15,11 +15,14 @@ func main() {
 			debug.PrintStack()
 		}
 	}()
-	generate := flag.Bool("generate", false, "Generate .gob archive files from Barchart .csv files")
+	generateAll := flag.Bool("generate-all", false, "Generate .gob archive files from Barchart .csv files for all assets")
+	generate := flag.String("generate", "", "Generate .gob archive for just that symbol")
 	viewArchive := flag.String("archive", "", "Analyze archive contents of the specified symbol")
 	flag.Parse()
-	if generate != nil && *generate {
-		sibylla.Generate()
+	if generateAll != nil && *generateAll {
+		sibylla.Generate(nil)
+	} else if generate != nil {
+		sibylla.Generate(generate)
 	} else if viewArchive != nil && *viewArchive != "" {
 		sibylla.ViewArchive(*viewArchive)
 	} else {
