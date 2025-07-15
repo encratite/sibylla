@@ -8,11 +8,11 @@ import (
 	"strings"
 )
 
-const validationScript = "validate.js"
+const archiveScript = "archive.js"
 const dailyRecordsPlot = "daily.png"
 const archiveMinNonNilValues = 1000
 
-type ValidationModel struct {
+type ArchiveModel struct {
 	Symbol string `json:"symbol"`
 	Plot string `json:"plot"`
 	Features []FeatureStats `json:"features"`
@@ -28,7 +28,7 @@ type FeatureStats struct {
 	StdDev float64 `json:"stdDev"`
 }
 
-func ValidateArchive(symbol string) {
+func ViewArchive(symbol string) {
 	loadConfiguration()
 	var fileName string
 	if strings.ContainsRune(symbol, '.') {
@@ -41,13 +41,13 @@ func ValidateArchive(symbol string) {
 	dailyRecordsPlotPath := filepath.Join(configuration.TempPath, dailyRecordsPlot)
 	plotDailyRecords(archive.DailyRecords, dailyRecordsPlotPath)
 	featureStats := getFeatureStats(archive)
-	validationModel := ValidationModel{
+	model := ArchiveModel{
 		Symbol: symbol,
 		Plot: getFileURL(dailyRecordsPlotPath),
 		Features: featureStats,
 	}
-	title := fmt.Sprintf("Validate Archive - %s", symbol)
-	runBrowser(title, validationScript, validationModel)
+	title := fmt.Sprintf("View Archive - %s", symbol)
+	runBrowser(title, archiveScript, model)
 }
 
 func getFeatureStats(archive Archive) []FeatureStats {

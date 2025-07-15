@@ -1,4 +1,4 @@
-function renderValidationUI() {
+function renderArchiveUI() {
 	const jsonScript = document.getElementById("model");
 	const model = JSON.parse(jsonScript.textContent);
 	const topLevel = createElement("div", document.body, {
@@ -66,5 +66,5 @@ function roundValue(value) {
 }
 
 addEventListener("DOMContentLoaded", event => {
-	renderValidationUI();
+	renderArchiveUI();
 });
