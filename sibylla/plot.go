@@ -3,6 +3,7 @@ package sibylla
 import (
 	"image/color"
 	"log"
+	"slices"
 	"time"
 
 	"golang.org/x/image/font/opentype"
@@ -70,9 +71,13 @@ func plotFeatureHistogram(stdDev float64, values []float64, path string) {
 	}
 	h.Normalize(1)
 	p.Add(h)
-	xLimit := 6 * stdDev
-	p.X.Min = - xLimit
-	p.X.Max = xLimit
+	valuesMin := slices.Min(values)
+	valuesMax := slices.Max(values)
+	if valuesMin != 0.0 && valuesMax != 1.0 {
+		xLimit := 6 * stdDev
+		p.X.Min = - xLimit
+		p.X.Max = xLimit
+	}
 	err = p.Save(8 * vg.Inch, 4 * vg.Inch, path)
 	if err != nil {
 		panic(err)

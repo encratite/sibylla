@@ -24,8 +24,8 @@ type DailyRecord struct {
 type FeatureRecord struct {
 	Timestamp time.Time
 	Momentum1D *float64
+	Momentum1DLag *float64
 	Momentum2D *float64
-	Momentum2DLag *float64
 	Momentum8H *float64
 	Returns24H *int
 	Returns48H *int
@@ -35,6 +35,11 @@ type FeatureRecord struct {
 type featureDefinition struct {
 	name string
 	selectFloat func (*FeatureRecord) *float64
+}
+
+type featureAccessor struct {
+	get func (*FeatureRecord) *float64
+	set func (*FeatureRecord, float64)
 }
 
 func readArchive(path string) Archive {
@@ -89,15 +94,21 @@ func getFeatureDefinitions() []featureDefinition {
 			},
 		},
 		{
+			name: "momentum1DLag",
+			selectFloat: func (f *FeatureRecord) *float64 {
+				return f.Momentum1DLag
+			},
+		},
+		{
 			name: "momentum2D",
 			selectFloat: func (f *FeatureRecord) *float64 {
 				return f.Momentum2D
 			},
 		},
 		{
-			name: "momentum2DLag",
+			name: "momentum8H",
 			selectFloat: func (f *FeatureRecord) *float64 {
-				return f.Momentum2DLag
+				return f.Momentum8H
 			},
 		},
 		{
@@ -129,4 +140,42 @@ func selectIntToFloat(i *int) *float64 {
 	} else {
 		return nil
 	}
+}
+
+func getFeatureAccessors() []featureAccessor {
+	accessors := []featureAccessor{
+		{
+			get: func (f *FeatureRecord) *float64 {
+				return f.Momentum1D
+			},
+			set: func (f *FeatureRecord, x float64) {
+				f.Momentum1D = &x
+			},
+		},
+		{
+			get: func (f *FeatureRecord) *float64 {
+				return f.Momentum1DLag
+			},
+			set: func (f *FeatureRecord, x float64) {
+				f.Momentum1DLag = &x
+			},
+		},
+		{
+			get: func (f *FeatureRecord) *float64 {
+				return f.Momentum2D
+			},
+			set: func (f *FeatureRecord, x float64) {
+				f.Momentum2D = &x
+			},
+		},
+		{
+			get: func (f *FeatureRecord) *float64 {
+				return f.Momentum8H
+			},
+			set: func (f *FeatureRecord, x float64) {
+				f.Momentum8H = &x
+			},
+		},
+	}
+	return accessors
 }

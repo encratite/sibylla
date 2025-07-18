@@ -69,7 +69,12 @@ function roundValue(value) {
 	if (Number.isInteger(value)) {
 		return value.toString();
 	} else {
-		return value.toFixed(3).toString();
+		const output = value.toFixed(3).toString();
+		if (output === "0.000") {
+			return "0";
+		} else {
+			return output;
+		}
 	}
 }
 

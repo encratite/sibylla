@@ -141,6 +141,9 @@ func generateFRecords(
 			&archive,
 		)
 	}
+	if configuration.QuantileTransform {
+		archive.IntradayRecords = quantileTransform(configuration.QuantileBufferSize, configuration.QuantileStride, archive.IntradayRecords)
+	}
 	sizeBytes := writeArchive(path, &archive)
 	sizeMibibytes := float64(sizeBytes) / 1024.0 / 1024.0
 	fmt.Printf("[%s] Wrote archive to %s (%.1f MiB)\n", asset.Symbol, path, sizeMibibytes)
@@ -175,8 +178,8 @@ func processIntradayTimestamp(
 	features := FeatureRecord{
 		Timestamp: closeTimestamp,
 		Momentum1D: momentumHelper(1, 0, 0),
+		Momentum1DLag: momentumHelper(2, 1, 0),
 		Momentum2D: momentumHelper(2, 0, 0),
-		Momentum2DLag: momentumHelper(2, 1, 0),
 		Momentum8H: momentumHelper(0, 0, 8),
 		Returns24H: returnsHelper(1, 0),
 		Returns48H: returnsHelper(2, 0),
@@ -389,8 +392,8 @@ func getDecimal(s string, path string) SerializableDecimal {
 func (f *FeatureRecord) includeRecord() bool {
 	features := []*float64{
 		f.Momentum1D,
+		f.Momentum1DLag,
 		f.Momentum2D,
-		f.Momentum2DLag,
 		f.Momentum8H,
 	}
 	for _, x := range features {

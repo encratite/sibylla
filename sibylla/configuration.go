@@ -12,6 +12,9 @@ type Configuration struct {
 	GobPath string `yaml:"gobPath"`
 	CutoffDate SerializableDate `yaml:"cutoffDate"`
 	OverwriteArchives bool `yaml:"overwriteArchives"`
+	QuantileTransform bool `yaml:"quantileTransform"`
+	QuantileBufferSize int `yaml:"quantileBufferSize"`
+	QuantileStride int `yaml:"quantileStride"`
 	FontPath string `yaml:"fontPath"`
 	FontName string `yaml:"fontName"`
 	WebPath string `yaml:"webPath"`

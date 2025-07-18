@@ -138,6 +138,7 @@
   legacyCutoff: PLN01
   excludeMonths: [F, J, N, V]
   cutoffDate: 2002-08-08
+  featuresOnly: true
   currency: USD
   tickSize: 0.1
   tickValue: 5.0
