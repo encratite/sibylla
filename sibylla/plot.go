@@ -3,6 +3,7 @@ package sibylla
 import (
 	"image/color"
 	"log"
+	"math"
 	"slices"
 	"time"
 
@@ -62,18 +63,28 @@ func plotDailyRecords(records []DailyRecord, path string) {
 }
 
 func plotFeatureHistogram(stdDev float64, values []float64, path string) {
+	valuesMin := slices.Min(values)
+	valuesMax := slices.Max(values)
+	var bins int
+	quantiles := epsilonCompare(valuesMin, 0.0) && epsilonCompare(valuesMax, 1.0)
+	if quantiles {
+		bins = 30
+	} else {
+		bins = 50
+	}
 	plotterValues := make(plotter.Values, len(values))
 	copy(plotterValues, values)
 	p := plot.New()
-	h, err := plotter.NewHist(plotterValues, 50)
+	h, err := plotter.NewHist(plotterValues, bins)
 	if err != nil {
 		panic(err)
 	}
 	h.Normalize(1)
 	p.Add(h)
-	valuesMin := slices.Min(values)
-	valuesMax := slices.Max(values)
-	if valuesMin != 0.0 && valuesMax != 1.0 {
+	if quantiles {
+		p.X.Min = 0
+		p.X.Max = 1
+	} else {
 		xLimit := 6 * stdDev
 		p.X.Min = - xLimit
 		p.X.Max = xLimit
@@ -82,6 +93,10 @@ func plotFeatureHistogram(stdDev float64, values []float64, path string) {
 	if err != nil {
 		panic(err)
 	}
+}
+
+func epsilonCompare(a float64, b float64) bool {
+	return math.Abs(a - b) <= 1e-3
 }
 
 func (YearlyTicks) Ticks(min, max float64) []plot.Tick {

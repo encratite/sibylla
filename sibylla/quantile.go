@@ -1,7 +1,6 @@
 package sibylla
 
 import (
-	"fmt"
 	"log"
 	"sort"
 )
@@ -23,21 +22,9 @@ func quantileTransform(bufferSize, stride int, input []FeatureRecord) []FeatureR
 	}
 	output := make([]FeatureRecord, len(input))
 	copy(output, input)
-	// outputTest(output)
 	anchoredQuantileTransform(bufferSize, input, output)
-	// outputTest(output)
 	rollingQuantileTransform(bufferSize, stride, input, output)
 	return output
-}
-
-func outputTest(output []FeatureRecord) {
-	for i, record := range output[:100] {
-		if record.Momentum1DLag != nil {
-			fmt.Printf("output[%d] = %.4f\n", i, *record.Momentum1DLag)
-		} else {
-			fmt.Printf("output[%d] = nil\n", i)
-		}
-	}
 }
 
 func anchoredQuantileTransform(
@@ -74,9 +61,6 @@ func anchoredQuantileTransform(
 				accBuffer.apply(insertIndex, featIndex, output)
 			}
 		}
-	}
-	for i := range output[:bufferSize] {
-		output[i].Momentum1DLag = nil
 	}
 }
 
@@ -141,7 +125,6 @@ func (accBuffer *accessorBuffer) sort() {
 func (accBuffer *accessorBuffer) apply(i int, featIndex featureIndex, output []FeatureRecord) {
 	destination := &output[featIndex.index]
 	quantile := float64(i) / float64(len(accBuffer.buffer) - 1)
-	// fmt.Printf("output[%d] = %d / %d = %.2f\n", featIndex.index, i, len(accBuffer.buffer) - 1, quantile)
 	accBuffer.accessor.set(destination, quantile)
 }
 
@@ -149,11 +132,9 @@ func (accBuffer *accessorBuffer) insert(featIndex featureIndex) int {
 	insertIndex := sort.Search(len(accBuffer.buffer), func (i int) bool {
 		return accBuffer.buffer[i].value >= featIndex.value
 	})
-	fmt.Printf("Pre: %s | %s\n", accBuffer.buffer[insertIndex:insertIndex + 10], accBuffer.buffer[len(accBuffer.buffer) - 1])
 	accBuffer.buffer = append(accBuffer.buffer, featureIndex{})
 	copy(accBuffer.buffer[insertIndex + 1:], accBuffer.buffer[insertIndex:])
 	accBuffer.buffer[insertIndex] = featIndex
-	fmt.Printf("Post: %s | %s\n", accBuffer.buffer[insertIndex:insertIndex + 10], accBuffer.buffer[len(accBuffer.buffer) - 1])
 	return insertIndex
 }
 
@@ -176,8 +157,4 @@ func filAccessorBuffers(
 			}
 		}
 	}
-}
-
-func (f featureIndex) String() string {
-	return fmt.Sprintf("(%.4f, %d)", f.value, f.index)
 }

@@ -145,7 +145,6 @@ func selectIntToFloat(i *int) *float64 {
 
 func getFeatureAccessors() []featureAccessor {
 	accessors := []featureAccessor{
-		/*
 		{
 			anchored: false,
 			get: func (f *FeatureRecord) *float64 {
@@ -155,9 +154,8 @@ func getFeatureAccessors() []featureAccessor {
 				f.Momentum1D = &x
 			},
 		},
-		*/
 		{
-			anchored: true,
+			anchored: false,
 			get: func (f *FeatureRecord) *float64 {
 				return f.Momentum1DLag
 			},
@@ -165,7 +163,6 @@ func getFeatureAccessors() []featureAccessor {
 				f.Momentum1DLag = &x
 			},
 		},
-		/*
 		{
 			anchored: false,
 			get: func (f *FeatureRecord) *float64 {
@@ -184,7 +181,6 @@ func getFeatureAccessors() []featureAccessor {
 				f.Momentum8H = &x
 			},
 		},
-		*/
 	}
 	return accessors
 }
