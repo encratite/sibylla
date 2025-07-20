@@ -2,7 +2,6 @@ package sibylla
 
 import (
 	"fmt"
-	"log"
 	"time"
 )
 
@@ -51,10 +50,7 @@ func Correlate(fromString, toString string) {
 
 func getDateFromArg(argument string) *time.Time {
 	if argument != "" {
-		date, err := getDate(argument)
-		if err != nil {
-			log.Fatal(err)
-		}
+		date := getDate(argument)
 		return &date
 	} else {
 		return nil

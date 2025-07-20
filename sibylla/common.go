@@ -19,7 +19,7 @@ type taskTuple[T any] struct {
 const dateLayout = "2006-01-02"
 const timestampLayout = "2006-01-02 15:04"
 
-func getDate(dateString string) (time.Time, error) {
+func getDateErr(dateString string) (time.Time, error) {
 	date, err := time.Parse(dateLayout, dateString)
 	if err != nil {
 		return time.Time{}, fmt.Errorf("failed to parse date string \"%s\": %v", dateString, err)
@@ -27,12 +27,28 @@ func getDate(dateString string) (time.Time, error) {
 	return date, nil
 }
 
-func getTime(timeString string) time.Time {
+func getDate(dateString string) time.Time {
+	date, err := getDateErr(dateString)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return date
+}
+
+func getTimeErr(timeString string) (time.Time, error) {
 	timestamp, err := time.Parse(timestampLayout, timeString)
 	if err != nil {
-		log.Fatalf("Failed to parse time string \"%s\": %v", timeString, err)
+		return time.Time{}, fmt.Errorf("failed to parse time string \"%s\": %v", timeString, err)
 	}
-	return timestamp
+	return timestamp, nil
+}
+
+func getTime(timeString string) time.Time {
+	date, err := getTimeErr(timeString)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return date
 }
 
 func getDateString(date time.Time) string {

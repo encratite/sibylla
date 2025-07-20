@@ -21,6 +21,7 @@
   spread: 3
 - symbol: YM
   name: E-Mini Dow Jones Industrial Average
+  excludeRecords: [2008-09-19 15:00]
   currency: USD
   tickSize: 1.0
   tickValue: 5.0

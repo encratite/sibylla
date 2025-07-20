@@ -12,6 +12,8 @@ import (
 	"github.com/shopspring/decimal"
 )
 
+const returnsLimit = 100000
+
 type openInterestRecords struct {
 	date time.Time
 	records []dailyRecord
@@ -250,6 +252,9 @@ func getReturns(
 	if exists {
 		delta := horizonClose.Sub(close.Decimal)
 		ticks := int(delta.Div(asset.TickSize.Decimal).IntPart())
+		if ticks < - returnsLimit || ticks > returnsLimit {
+			log.Fatalf("[%s] Excessive returns sample: adjustedTimestamp = %s, timestamp = %s, horizonClose = %s, close = %s, ticks = %d\n", asset.Symbol, getTimeString(adjustedTimestamp), getTimeString(timestamp), horizonClose.Decimal, close.Decimal, ticks)
+		}
 		return &ticks
 	} else {
 		return nil
@@ -302,10 +307,7 @@ func readDailyRecords(asset Asset) ([]openInterestRecords, dailyCloseMap, int, i
 		if err != nil {
 			log.Fatal(err)
 		}
-		date, err := getDate(values[1])
-		if err != nil {
-			log.Fatal(err)
-		}
+		date := getDate(values[1])
 		if date.Before(configuration.CutoffDate.Time) {
 			// Record is too old, skip it
 			excludedRecords += 1
@@ -363,6 +365,11 @@ func readIntradayRecords(asset Asset) intradayCloseMap {
 		timestamp := getTime(values[1])
 		if timestamp.Before(configuration.CutoffDate.Time) {
 			return
+		}
+		for _, excludedTime := range asset.ExcludeRecords {
+			if excludedTime.Time.Equal(timestamp) {
+				return
+			}
 		}
 		close := getDecimal(values[2], path)
 		key := getGlobexTimeKey(symbol, timestamp)

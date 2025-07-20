@@ -2,6 +2,7 @@ package sibylla
 
 import (
 	"fmt"
+	
 	"strings"
 	"time"
 
@@ -19,6 +20,7 @@ type Asset struct {
 	LastFilterContract *GlobexCode `yaml:"lastFilterContract"`
 	IncludeMonths []string `yaml:"includeMonths"`
 	ExcludeMonths []string `yaml:"excludeMonths"`
+	ExcludeRecords []*ConfigTime `yaml:"excludeRecords"`
 	CutoffDate *ConfigDate `yaml:"cutoffDate"`
 	FRecords *int `yaml:"fRecords"`
 	FeaturesOnly bool `yaml:"featuresOnly"`
@@ -34,6 +36,10 @@ type Asset struct {
 }
 
 type ConfigDate struct {
+	time.Time
+}
+
+type ConfigTime struct {
 	time.Time
 }
 
@@ -86,11 +92,20 @@ func (a *Asset) includeRecord(date time.Time, symbol GlobexCode) bool {
 }
 
 func (c *ConfigDate) UnmarshalYAML(value *yaml.Node) error {
-	date, err := getDate(value.Value)
+	date, err := getDateErr(value.Value)
 	if err != nil {
 		return err
 	}
 	*c = ConfigDate{date}
+	return nil
+}
+
+func (c *ConfigTime) UnmarshalYAML(value *yaml.Node) error {
+	timestamp, err := getTimeErr(value.Value)
+	if err != nil {
+		return err
+	}
+	*c = ConfigTime{timestamp}
 	return nil
 }
 

@@ -67,7 +67,7 @@ func loadAssets() {
 }
 
 func (d *SerializableDate) UnmarshalYAML(value *yaml.Node) error {
-	date, err := getDate(value.Value)
+	date, err := getDateErr(value.Value)
 	if err != nil {
 		return err
 	}
