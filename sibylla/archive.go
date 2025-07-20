@@ -38,6 +38,7 @@ type featureDefinition struct {
 }
 
 type featureAccessor struct {
+	anchored bool
 	get func (*FeatureRecord) *float64
 	set func (*FeatureRecord, float64)
 }
@@ -144,7 +145,9 @@ func selectIntToFloat(i *int) *float64 {
 
 func getFeatureAccessors() []featureAccessor {
 	accessors := []featureAccessor{
+		/*
 		{
+			anchored: false,
 			get: func (f *FeatureRecord) *float64 {
 				return f.Momentum1D
 			},
@@ -152,7 +155,9 @@ func getFeatureAccessors() []featureAccessor {
 				f.Momentum1D = &x
 			},
 		},
+		*/
 		{
+			anchored: true,
 			get: func (f *FeatureRecord) *float64 {
 				return f.Momentum1DLag
 			},
@@ -160,7 +165,9 @@ func getFeatureAccessors() []featureAccessor {
 				f.Momentum1DLag = &x
 			},
 		},
+		/*
 		{
+			anchored: false,
 			get: func (f *FeatureRecord) *float64 {
 				return f.Momentum2D
 			},
@@ -169,6 +176,7 @@ func getFeatureAccessors() []featureAccessor {
 			},
 		},
 		{
+			anchored: false,
 			get: func (f *FeatureRecord) *float64 {
 				return f.Momentum8H
 			},
@@ -176,6 +184,7 @@ func getFeatureAccessors() []featureAccessor {
 				f.Momentum8H = &x
 			},
 		},
+		*/
 	}
 	return accessors
 }
