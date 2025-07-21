@@ -10,22 +10,22 @@ function renderArchiveUI() {
 	createElement("img", dailyRecords, {
 		src: model.plot
 	});
-	model.features.forEach(feature => {
+	model.properties.forEach(property => {
 		const container = createElement("div", topLevel, {
-			className: "feature"
+			className: "property"
 		});
 		const addMissingValueStyle = valueCell => {
-			if (feature.nilRatio >= 0.1) {
+			if (property.nilRatio >= 0.1) {
 				valueCell.style.color = "#ff0000";
 			}
 		};
 		const properties = [
-			["Property", feature.name],
-			["Missing Values", getPercentage(feature.nilRatio), addMissingValueStyle],
-			["Minimum", roundValue(feature.min)],
-			["Maximum", roundValue(feature.max)],
-			["Mean", roundValue(feature.mean)],
-			["Standard Deviation", roundValue(feature.stdDev)],
+			["Property", property.name],
+			["Missing Values", getPercentage(property.nilRatio), addMissingValueStyle],
+			["Minimum", roundValue(property.min)],
+			["Maximum", roundValue(property.max)],
+			["Mean", roundValue(property.mean)],
+			["Standard Deviation", roundValue(property.stdDev)],
 		];
 		const table = createElement("table", container);
 		properties.forEach(definition => {
@@ -42,7 +42,7 @@ function renderArchiveUI() {
 			}
 		});
 		createElement("img", container, {
-			src: feature.plot
+			src: property.plot
 		});
 	});
 }

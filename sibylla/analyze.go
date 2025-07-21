@@ -15,10 +15,10 @@ const archiveMinNonNilValues = 1000
 type ArchiveModel struct {
 	Symbol string `json:"symbol"`
 	Plot string `json:"plot"`
-	Features []FeatureStats `json:"features"`
+	Properties []PropertyStats `json:"properties"`
 }
 
-type FeatureStats struct {
+type PropertyStats struct {
 	Name string `json:"name"`
 	Plot string `json:"plot"`
 	NilRatio float64 `json:"nilRatio"`
@@ -40,32 +40,32 @@ func ViewArchive(symbol string) {
 	archive := readArchive(archivePath)
 	dailyRecordsPlotPath := filepath.Join(configuration.TempPath, dailyRecordsPlot)
 	plotDailyRecords(archive.DailyRecords, dailyRecordsPlotPath)
-	featureStats := getFeatureStats(archive)
+	propertyStats := getPropertyStats(archive)
 	model := ArchiveModel{
 		Symbol: symbol,
 		Plot: getFileURL(dailyRecordsPlotPath),
-		Features: featureStats,
+		Properties: propertyStats,
 	}
 	title := fmt.Sprintf("View Archive - %s", symbol)
 	runBrowser(title, archiveScript, model)
 }
 
-func getFeatureStats(archive Archive) []FeatureStats {
-	featureDefinitions := getFeatureDefinitions()
-	featureStats := parallelMap(featureDefinitions, func (feature featureDefinition) FeatureStats {
-		return getFeatureStatsWorker(feature, archive)
+func getPropertyStats(archive Archive) []PropertyStats {
+	properties := getArchiveProperties()
+	propertyStats := parallelMap(properties, func (feature archiveProperty) PropertyStats {
+		return getPropertyStatsWorker(feature, archive)
 	})
-	return featureStats
+	return propertyStats
 }
 
-func getFeatureStatsWorker(feature featureDefinition, archive Archive) FeatureStats {
+func getPropertyStatsWorker(feature archiveProperty, archive Archive) PropertyStats {
 	values := []float64{}
 	nilValues := 0
 	min := math.Inf(1)
 	max := math.Inf(-1)
 	sum := 0.0
 	for _, record := range archive.IntradayRecords {
-		pointer := feature.selectFloat(&record)
+		pointer := feature.get(&record)
 		if pointer != nil {
 			value := *pointer
 			if value < min {
@@ -87,7 +87,7 @@ func getFeatureStatsWorker(feature featureDefinition, archive Archive) FeatureSt
 	mean := sum / float64(len(values))
 	stdDevSum := 0.0
 	for _, record := range archive.IntradayRecords {
-		pointer := feature.selectFloat(&record)
+		pointer := feature.get(&record)
 		if pointer != nil {
 			delta := *pointer - mean
 			stdDevSum += delta * delta
@@ -97,7 +97,7 @@ func getFeatureStatsWorker(feature featureDefinition, archive Archive) FeatureSt
 	fileName := fmt.Sprintf("%s.png", feature.name)
 	plotPath := filepath.Join(configuration.TempPath, fileName)
 	plotFeatureHistogram(stdDev, values, plotPath)
-	return FeatureStats{
+	return PropertyStats{
 		Name: feature.name,
 		Plot: getFileURL(plotPath),
 		NilRatio: nilRatio,

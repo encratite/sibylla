@@ -10,6 +10,11 @@ import (
 
 const archiveExtension = "gobz"
 
+const momentum1DName = "momentum1D"
+const momentum1DLagName = "momentum1DLag"
+const momentum2DName = "momentum2D"
+const momentum8HName = "momentum8H"
+
 type Archive struct {
 	Symbol string
 	DailyRecords []DailyRecord
@@ -32,12 +37,13 @@ type FeatureRecord struct {
 	Returns72H *int
 }
 
-type featureDefinition struct {
+type archiveProperty struct {
 	name string
-	selectFloat func (*FeatureRecord) *float64
+	get func (*FeatureRecord) *float64
 }
 
 type featureAccessor struct {
+	name string
 	anchored bool
 	get func (*FeatureRecord) *float64
 	set func (*FeatureRecord, float64)
@@ -86,55 +92,55 @@ func writeArchive(path string, archive *Archive) int64 {
 	return size
 }
 
-func getFeatureDefinitions() []featureDefinition {
-	definitions := []featureDefinition{
+func getArchiveProperties() []archiveProperty {
+	properties := []archiveProperty{
 		{
-			name: "momentum1D",
-			selectFloat: func (f *FeatureRecord) *float64 {
+			name: momentum1DName,
+			get: func (f *FeatureRecord) *float64 {
 				return f.Momentum1D
 			},
 		},
 		{
-			name: "momentum1DLag",
-			selectFloat: func (f *FeatureRecord) *float64 {
+			name: momentum1DLagName,
+			get: func (f *FeatureRecord) *float64 {
 				return f.Momentum1DLag
 			},
 		},
 		{
-			name: "momentum2D",
-			selectFloat: func (f *FeatureRecord) *float64 {
+			name: momentum2DName,
+			get: func (f *FeatureRecord) *float64 {
 				return f.Momentum2D
 			},
 		},
 		{
-			name: "momentum8H",
-			selectFloat: func (f *FeatureRecord) *float64 {
+			name: momentum8HName,
+			get: func (f *FeatureRecord) *float64 {
 				return f.Momentum8H
 			},
 		},
 		{
 			name: "returns24H",
-			selectFloat: func (f *FeatureRecord) *float64 {
-				return selectIntToFloat(f.Returns24H)
+			get: func (f *FeatureRecord) *float64 {
+				return getFloatPointer(f.Returns24H)
 			},
 		},
 		{
 			name: "returns48H",
-			selectFloat: func (f *FeatureRecord) *float64 {
-				return selectIntToFloat(f.Returns48H)
+			get: func (f *FeatureRecord) *float64 {
+				return getFloatPointer(f.Returns48H)
 			},
 		},
 		{
 			name: "returns72H",
-			selectFloat: func (f *FeatureRecord) *float64 {
-				return selectIntToFloat(f.Returns72H)
+			get: func (f *FeatureRecord) *float64 {
+				return getFloatPointer(f.Returns72H)
 			},
 		},
 	}
-	return definitions
+	return properties
 }
 
-func selectIntToFloat(i *int) *float64 {
+func getFloatPointer(i *int) *float64 {
 	if i != nil {
 		f := float64(*i)
 		return &f
@@ -146,7 +152,7 @@ func selectIntToFloat(i *int) *float64 {
 func getFeatureAccessors() []featureAccessor {
 	accessors := []featureAccessor{
 		{
-			anchored: false,
+			name: momentum1DName,
 			get: func (f *FeatureRecord) *float64 {
 				return f.Momentum1D
 			},
@@ -155,7 +161,7 @@ func getFeatureAccessors() []featureAccessor {
 			},
 		},
 		{
-			anchored: false,
+			name: momentum1DLagName,
 			get: func (f *FeatureRecord) *float64 {
 				return f.Momentum1DLag
 			},
@@ -164,7 +170,7 @@ func getFeatureAccessors() []featureAccessor {
 			},
 		},
 		{
-			anchored: false,
+			name: momentum2DName,
 			get: func (f *FeatureRecord) *float64 {
 				return f.Momentum2D
 			},
@@ -173,7 +179,7 @@ func getFeatureAccessors() []featureAccessor {
 			},
 		},
 		{
-			anchored: false,
+			name: momentum8HName,
 			get: func (f *FeatureRecord) *float64 {
 				return f.Momentum8H
 			},
