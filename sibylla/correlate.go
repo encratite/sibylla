@@ -17,13 +17,14 @@ type assetPath struct {
 	path string
 }
 
-type assetArchive struct {
+type assetRecords struct {
 	asset Asset
-	archive Archive
+	records []FeatureRecord
+	recordsMap map[time.Time]*FeatureRecord
 }
 
 type correlationThreshold struct {
-	asset assetArchive
+	asset assetRecords
 	feature featureAccessor
 	min float64
 	max float64
@@ -46,23 +47,42 @@ func Correlate(fromString, toString string) {
 		}
 		for fNumber := 1; fNumber <= fRecords; fNumber++ {
 			path := getArchivePath(asset.Symbol, fNumber)
-			ap := assetPath{
+			assetPath := assetPath{
 				asset: asset,
 				path: path,
 			}
-			assetPaths = append(assetPaths, ap)
+			assetPaths = append(assetPaths, assetPath)
 		}
 	}
 	start := time.Now()
-	assetArchives := parallelMap(assetPaths, func (ap assetPath) assetArchive {
+	assetRecords := parallelMap(assetPaths, func (ap assetPath) assetRecords {
 		archive := readArchive(ap.path)
-		return assetArchive{
+		records := []FeatureRecord{}
+		recordsMap := map[time.Time]*FeatureRecord{}
+		for _, record := range archive.IntradayRecords {
+			if from != nil && record.Timestamp.Before(*from) {
+				continue
+			}
+			if to != nil && !record.Timestamp.Before(*to) {
+				break
+			}
+			records = append(records, record)
+			recordsMap[record.Timestamp] = &record
+		}
+		return assetRecords{
 			asset: ap.asset,
-			archive: archive,
+			records: records,
+			recordsMap: recordsMap,
 		}
 	})
 	delta := time.Since(start)
 	fmt.Printf("Loaded archives in %.2f s\n", delta.Seconds())
+	tasks := getCorrelationTasks(assetRecords)
+	results := parallelMap(tasks, executeCorrelationTask)
+	fmt.Printf("Results: %d\n", len(results))
+}
+
+func getCorrelationTasks(assetRecords []assetRecords) []correlationTask {
 	accessors := getFeatureAccessors()
 	minMax := [][]float64{
 		{0.0, 0.3},
@@ -70,11 +90,11 @@ func Correlate(fromString, toString string) {
 		{0.7, 1.0},
 	}
 	tasks := []correlationTask{}
-	for i, asset1 := range assetArchives {
+	for i, asset1 := range assetRecords {
 		if asset1.asset.FeaturesOnly {
 			continue
 		}
-		for j, asset2 := range assetArchives {
+		for j, asset2 := range assetRecords {
 			for k, feature1 := range accessors {
 				for l, feature2 := range accessors {
 					if i == j && k == l {
@@ -92,10 +112,7 @@ func Correlate(fromString, toString string) {
 			}
 		}
 	}
-	results := parallelMap(tasks, func (task correlationTask) correlationResult {
-		return executeCorrelationTask(from, to, task)
-	})
-	fmt.Printf("Results: %d\n", len(results))
+	return tasks
 }
 
 func getDateFromArg(argument string) *time.Time {
@@ -107,7 +124,7 @@ func getDateFromArg(argument string) *time.Time {
 	}
 }
 
-func newCorrelationThreshold(asset assetArchive, feature featureAccessor, minMax []float64) correlationThreshold {
+func newCorrelationThreshold(asset assetRecords, feature featureAccessor, minMax []float64) correlationThreshold {
 	return correlationThreshold{
 		asset: asset,
 		feature: feature,
@@ -116,6 +133,27 @@ func newCorrelationThreshold(asset assetArchive, feature featureAccessor, minMax
 	}
 }
 
-func executeCorrelationTask(from *time.Time, to *time.Time, task correlationTask) correlationResult {
+func executeCorrelationTask(task correlationTask) correlationResult {
+	threshold1 := &task[0]
+	threshold2 := &task[1]
+	for _, record1 := range threshold1.asset.records {
+		if !record1.hasReturns() || !threshold1.match(&record1) {
+			continue
+		}
+		record2, exists := threshold2.asset.recordsMap[record1.Timestamp]
+		if !exists || !threshold2.match(record2) {
+			continue
+		}
+	}
 	panic("Not implemented")
+}
+
+func (c *correlationThreshold) match(record *FeatureRecord) bool {
+	pointer := c.feature.get(record)
+	if pointer == nil {
+		return false
+	}
+	value := *pointer
+	match := value >= c.min && value <= c.max
+	return match
 }

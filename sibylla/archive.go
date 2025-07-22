@@ -190,3 +190,7 @@ func getFeatureAccessors() []featureAccessor {
 	}
 	return accessors
 }
+
+func (f *FeatureRecord) hasReturns() bool {
+	return f.Returns24H != nil || f.Returns48H != nil || f.Returns72H != nil
+}
