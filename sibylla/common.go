@@ -169,3 +169,12 @@ func getRateOfChange(a, b float64) (float64, bool) {
 	}
 	return a / b - 1, true
 }
+
+func contains[T comparable](slice []T, element T) bool {
+	for _, x := range slice {
+		if x == element {
+			return true
+		}
+	}
+	return false
+}

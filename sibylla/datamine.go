@@ -2,6 +2,7 @@ package sibylla
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -25,17 +26,17 @@ type assetRecords struct {
 	recordsMap map[time.Time]*FeatureRecord
 }
 
-type correlationThreshold struct {
+type featureThreshold struct {
 	asset assetRecords
 	feature featureAccessor
 	min float64
 	max float64
 }
 
-type correlationTask [2]correlationThreshold
+type dataMiningTask [2]featureThreshold
 
-type correlationResult struct {
-	task correlationTask
+type dataMiningResult struct {
+	task dataMiningTask
 	returns returnsAccessor
 	side positionSide
 	equityCurve []equityCurveSample
@@ -46,13 +47,17 @@ type equityCurveSample struct {
 	cash decimal.Decimal
 }
 
-func Correlate(fromString, toString string) {
+func DataMine(fromString, toString, assetsString string) {
 	loadConfiguration()
 	loadCurrencies()
 	from := getDateFromArg(fromString)
 	to := getDateFromArg(toString)
+	assetSymbols := strings.Split(assetsString, " ")
 	assetPaths := []assetPath{}
 	for _, asset := range *assets {
+		if len(assetSymbols) > 0 && !contains(assetSymbols, asset.Symbol) {
+			continue
+		}
 		fRecords := 1
 		if asset.FRecords != nil {
 			fRecords = *asset.FRecords
@@ -67,8 +72,8 @@ func Correlate(fromString, toString string) {
 		}
 	}
 	start := time.Now()
-	assetRecords := parallelMap(assetPaths, func (ap assetPath) assetRecords {
-		archive := readArchive(ap.path)
+	assetRecords := parallelMap(assetPaths, func (assetPath assetPath) assetRecords {
+		archive := readArchive(assetPath.path)
 		records := []FeatureRecord{}
 		recordsMap := map[time.Time]*FeatureRecord{}
 		for _, record := range archive.IntradayRecords {
@@ -82,26 +87,26 @@ func Correlate(fromString, toString string) {
 			recordsMap[record.Timestamp] = &record
 		}
 		return assetRecords{
-			asset: ap.asset,
+			asset: assetPath.asset,
 			records: records,
 			recordsMap: recordsMap,
 		}
 	})
 	delta := time.Since(start)
 	fmt.Printf("Loaded archives in %.2f s\n", delta.Seconds())
-	tasks := getCorrelationTasks(assetRecords)
-	results := parallelMap(tasks, executeCorrelationTask)
+	tasks := getDataMiningTasks(assetRecords)
+	results := parallelMap(tasks, executeDataMiningTask)
 	fmt.Printf("Results: %d\n", len(results))
 }
 
-func getCorrelationTasks(assetRecords []assetRecords) []correlationTask {
+func getDataMiningTasks(assetRecords []assetRecords) []dataMiningTask {
 	accessors := getFeatureAccessors()
 	minMax := [][]float64{
 		{0.0, 0.3},
 		{0.35, 0.65},
 		{0.7, 1.0},
 	}
-	tasks := []correlationTask{}
+	tasks := []dataMiningTask{}
 	for i, asset1 := range assetRecords {
 		if asset1.asset.FeaturesOnly {
 			continue
@@ -114,9 +119,9 @@ func getCorrelationTasks(assetRecords []assetRecords) []correlationTask {
 					}
 					for _, minMax1 := range minMax {
 						for _, minMax2 := range minMax {
-							threshold1 := newCorrelationThreshold(asset1, feature1, minMax1)
-							threshold2 := newCorrelationThreshold(asset2, feature2, minMax2)
-							task := correlationTask{threshold1, threshold2}
+							threshold1 := newDataMiningThreshold(asset1, feature1, minMax1)
+							threshold2 := newDataMiningThreshold(asset2, feature2, minMax2)
+							task := dataMiningTask{threshold1, threshold2}
 							tasks = append(tasks, task)
 						}
 					}
@@ -136,8 +141,8 @@ func getDateFromArg(argument string) *time.Time {
 	}
 }
 
-func newCorrelationThreshold(asset assetRecords, feature featureAccessor, minMax []float64) correlationThreshold {
-	return correlationThreshold{
+func newDataMiningThreshold(asset assetRecords, feature featureAccessor, minMax []float64) featureThreshold {
+	return featureThreshold{
 		asset: asset,
 		feature: feature,
 		min: minMax[0],
@@ -145,18 +150,18 @@ func newCorrelationThreshold(asset assetRecords, feature featureAccessor, minMax
 	}
 }
 
-func executeCorrelationTask(task correlationTask) []correlationResult {
+func executeDataMiningTask(task dataMiningTask) []dataMiningResult {
 	threshold1 := &task[0]
 	threshold2 := &task[1]
 	returnsAccessors := getReturnsAccessors()
-	results := []correlationResult{}
+	results := []dataMiningResult{}
 	sides := [2]positionSide{
 		SideLong,
 		SideShort,
 	}
 	for _, returns := range returnsAccessors {
 		for _, side := range sides {
-			result := correlationResult{
+			result := dataMiningResult{
 				task: task,
 				returns: returns,
 				side: side,
@@ -222,7 +227,7 @@ func getAssetReturns(side positionSide, timestamp time.Time, ticks int, asset *A
 	return gains
 }
 
-func (c *correlationThreshold) match(record *FeatureRecord) bool {
+func (c *featureThreshold) match(record *FeatureRecord) bool {
 	pointer := c.feature.get(record)
 	if pointer == nil {
 		return false
