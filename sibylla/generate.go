@@ -379,13 +379,6 @@ func readIntradayRecords(asset Asset) intradayCloseMap {
 	return recordsMap
 }
 
-func getBarchartCsvPath(asset Asset, suffix string) string {
-	symbol := asset.getBarchartSymbol()
-	filename := fmt.Sprintf("%s.%s.csv", symbol, suffix)
-	path := filepath.Join(configuration.BarchartPath, filename)
-	return path
-}
-
 func getDecimal(s string, path string) SerializableDecimal {
 	value, err := decimal.NewFromString(s)
 	if err != nil {
@@ -394,6 +387,13 @@ func getDecimal(s string, path string) SerializableDecimal {
 	return SerializableDecimal{
 		Decimal: value,
 	}
+}
+
+func getBarchartCsvPath(asset Asset, suffix string) string {
+	symbol := asset.getBarchartSymbol()
+	filename := fmt.Sprintf("%s.%s.csv", symbol, suffix)
+	path := filepath.Join(configuration.BarchartPath, filename)
+	return path
 }
 
 func (f *FeatureRecord) includeRecord() bool {

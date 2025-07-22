@@ -3,6 +3,8 @@ package sibylla
 import (
 	"fmt"
 	"time"
+
+	"github.com/shopspring/decimal"
 )
 
 type positionSide int
@@ -33,10 +35,20 @@ type correlationThreshold struct {
 type correlationTask [2]correlationThreshold
 
 type correlationResult struct {
+	task correlationTask
+	returns returnsAccessor
+	side positionSide
+	equityCurve []equityCurveSample
+}
+
+type equityCurveSample struct {
+	timestamp time.Time
+	cash decimal.Decimal
 }
 
 func Correlate(fromString, toString string) {
 	loadConfiguration()
+	loadCurrencies()
 	from := getDateFromArg(fromString)
 	to := getDateFromArg(toString)
 	assetPaths := []assetPath{}
@@ -133,19 +145,81 @@ func newCorrelationThreshold(asset assetRecords, feature featureAccessor, minMax
 	}
 }
 
-func executeCorrelationTask(task correlationTask) correlationResult {
+func executeCorrelationTask(task correlationTask) []correlationResult {
 	threshold1 := &task[0]
 	threshold2 := &task[1]
-	for _, record1 := range threshold1.asset.records {
-		if !record1.hasReturns() || !threshold1.match(&record1) {
+	returnsAccessors := getReturnsAccessors()
+	results := []correlationResult{}
+	sides := [2]positionSide{
+		SideLong,
+		SideShort,
+	}
+	for _, returns := range returnsAccessors {
+		for _, side := range sides {
+			result := correlationResult{
+				task: task,
+				returns: returns,
+				side: side,
+				equityCurve: []equityCurveSample{},
+			}
+			results = append(results, result)
+		}
+	}
+	for i := range threshold1.asset.records {
+		record1 := &threshold1.asset.records[i]
+		if !record1.hasReturns() || !threshold1.match(record1) {
 			continue
 		}
 		record2, exists := threshold2.asset.recordsMap[record1.Timestamp]
 		if !exists || !threshold2.match(record2) {
 			continue
 		}
+		asset := &threshold1.asset.asset
+		for i := range results {
+			result := &results[i]
+			ticks := result.returns.get(record1)
+			if ticks == nil {
+				continue
+			}
+			cash := decimal.Zero
+			equityCurve := &result.equityCurve
+			length := len(*equityCurve)
+			if length > 0 {
+				lastSample := &(*equityCurve)[length - 1]
+				duration := record1.Timestamp.Sub(lastSample.timestamp)
+				holdingTime := time.Duration(result.returns.holdingTime) * time.Hour
+				if duration < holdingTime {
+					continue
+				}
+				cash = lastSample.cash
+			}
+			returns := getAssetReturns(result.side, record1.Timestamp, *ticks, asset)
+			cash = cash.Add(returns)
+			sample := equityCurveSample{
+				timestamp: record1.Timestamp,
+				cash: cash,
+			}
+			*equityCurve = append(*equityCurve, sample)
+		}
 	}
-	panic("Not implemented")
+	return results
+}
+
+func getAssetReturns(side positionSide, timestamp time.Time, ticks int, asset *Asset) decimal.Decimal {
+	if side == SideLong {
+		ticks -= asset.Spread
+	} else {
+		ticks += asset.Spread
+	}
+	ticksDecimal := decimal.NewFromInt(int64(ticks))
+	rawGains := ticksDecimal.Mul(asset.TickValue.Decimal)
+	gains := convertCurrency(timestamp, rawGains, asset.Currency)
+	if side == SideShort {
+		gains = gains.Neg()
+	}
+	fees := asset.BrokerFee.Decimal.Add(asset.ExchangeFee.Decimal)
+	gains = gains.Sub(fees)
+	return gains
 }
 
 func (c *correlationThreshold) match(record *FeatureRecord) bool {
