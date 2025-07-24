@@ -2,13 +2,26 @@ package sibylla
 
 import (
 	"fmt"
+	"log"
 	"math"
-	"strings"
+	"slices"
 	"time"
 
 	"github.com/shopspring/decimal"
 	"gonum.org/v1/gonum/stat"
+	"gopkg.in/yaml.v3"
 )
+
+type DataMiningConfiguration struct {
+	Assets []string `yaml:"assets"`
+	StrategyLimit int `yaml:"strategyLimit"`
+	DateMin *SerializableDate `yaml:"dateMin"`
+	DateMax *SerializableDate `yaml:"dateMax"`
+	TimeMin *SerializableDuration `yaml:"timeMin"`
+	TimeMax *SerializableDuration `yaml:"timeMax"`
+	Weekdays []SerializableWeekday `yaml:"weekdays"`
+	Thresholds [][]float64 `yaml:"thresholds"`
+}
 
 type positionSide int
 
@@ -42,7 +55,7 @@ type dataMiningResult struct {
 	returns returnsAccessor
 	side positionSide
 	equityCurve []equityCurveSample
-	sharpeRatio float64
+	riskAdjusted float64
 }
 
 type equityCurveSample struct {
@@ -50,15 +63,13 @@ type equityCurveSample struct {
 	cash decimal.Decimal
 }
 
-func DataMine(fromString, toString, assetsString string) {
+func DataMine(yamlPath string) {
 	loadConfiguration()
 	loadCurrencies()
-	from := getDateFromArg(fromString)
-	to := getDateFromArg(toString)
-	assetSymbols := strings.Split(assetsString, " ")
+	miningConfig := loadDataMiningConfiguration(yamlPath)
 	assetPaths := []assetPath{}
 	for _, asset := range *assets {
-		if len(assetSymbols) > 0 && !contains(assetSymbols, asset.Symbol) {
+		if len(miningConfig.Assets) > 0 && !contains(miningConfig.Assets, asset.Symbol) {
 			continue
 		}
 		fRecords := 1
@@ -80,11 +91,19 @@ func DataMine(fromString, toString, assetsString string) {
 		records := []FeatureRecord{}
 		recordsMap := map[time.Time]*FeatureRecord{}
 		for _, record := range archive.IntradayRecords {
-			if from != nil && record.Timestamp.Before(*from) {
+			if miningConfig.DateMin != nil && record.Timestamp.Before(miningConfig.DateMin.Time) {
 				continue
 			}
-			if to != nil && !record.Timestamp.Before(*to) {
+			if miningConfig.DateMax != nil && !record.Timestamp.Before(miningConfig.DateMax.Time) {
 				break
+			}
+			date := getDateFromTime(record.Timestamp)
+			timeOfDay := record.Timestamp.Sub(date)
+			if miningConfig.TimeMin != nil && timeOfDay < miningConfig.TimeMin.Duration {
+				continue
+			}
+			if miningConfig.TimeMax != nil && timeOfDay > miningConfig.TimeMax.Duration {
+				continue
 			}
 			records = append(records, record)
 			recordsMap[record.Timestamp] = &record
@@ -98,24 +117,32 @@ func DataMine(fromString, toString, assetsString string) {
 	delta := time.Since(start)
 	fmt.Printf("Loaded archives in %.2f s\n", delta.Seconds())
 	start = time.Now()
-	tasks := getDataMiningTasks(assetRecords)
+	tasks := getDataMiningTasks(assetRecords, miningConfig)
 	fmt.Printf("Data mining with %d tasks\n", len(tasks))
-	nestedResults := parallelMap(tasks, executeDataMiningTask)
-	results := []dataMiningResult{}
-	for _, r := range nestedResults {
-		results = append(results, r...)
-	}
+	taskResults := parallelMap(tasks, executeDataMiningTask)
 	delta = time.Since(start)
 	fmt.Printf("Finished data mining in %.2f s\n", delta.Seconds())
+	assetResults := map[string][]dataMiningResult{}
+	for _, results := range taskResults {
+		for _, result := range results {
+			key := result.task[0].asset.asset.Symbol
+			assetResults[key] = append(assetResults[key], result)
+		}
+	}
+	for symbol := range assetResults {
+		slices.SortFunc(assetResults[symbol], func (a, b dataMiningResult) int {
+			return compareFloat64(b.riskAdjusted, a.riskAdjusted)
+		})
+		results := assetResults[symbol]
+		if len(results) > miningConfig.StrategyLimit {
+			results = results[:miningConfig.StrategyLimit]
+		}
+		assetResults[symbol] = results
+	}
 }
 
-func getDataMiningTasks(assetRecords []assetRecords) []dataMiningTask {
+func getDataMiningTasks(assetRecords []assetRecords, miningConfig DataMiningConfiguration) []dataMiningTask {
 	accessors := getFeatureAccessors()
-	minMax := [][]float64{
-		{0.0, 0.35},
-		{0.3, 0.7},
-		{0.65, 1.0},
-	}
 	tasks := []dataMiningTask{}
 	for i, asset1 := range assetRecords {
 		if asset1.asset.FeaturesOnly {
@@ -127,8 +154,8 @@ func getDataMiningTasks(assetRecords []assetRecords) []dataMiningTask {
 					if i == j && k == l {
 						continue
 					}
-					for _, minMax1 := range minMax {
-						for _, minMax2 := range minMax {
+					for _, minMax1 := range miningConfig.Thresholds {
+						for _, minMax2 := range miningConfig.Thresholds {
 							threshold1 := newDataMiningThreshold(asset1, feature1, minMax1)
 							threshold2 := newDataMiningThreshold(asset2, feature2, minMax2)
 							task := dataMiningTask{threshold1, threshold2}
@@ -140,15 +167,6 @@ func getDataMiningTasks(assetRecords []assetRecords) []dataMiningTask {
 		}
 	}
 	return tasks
-}
-
-func getDateFromArg(argument string) *time.Time {
-	if argument != "" {
-		date := getDate(argument)
-		return &date
-	} else {
-		return nil
-	}
 }
 
 func newDataMiningThreshold(asset assetRecords, feature featureAccessor, minMax []float64) featureThreshold {
@@ -228,8 +246,8 @@ func executeDataMiningTask(task dataMiningTask) []dataMiningResult {
 		returnsSamples := allReturnsSamples[i]
 		mean := stat.Mean(returnsSamples, nil)
 		stdDev := stat.StdDev(returnsSamples, nil)
-		sharpeRatio := mean / stdDev
-		result.sharpeRatio = sharpeRatio
+		riskAdjusted := mean / stdDev
+		result.riskAdjusted = riskAdjusted
 	}
 	return results
 }
@@ -259,4 +277,29 @@ func (c *featureThreshold) match(record *FeatureRecord) bool {
 	value := *pointer
 	match := value >= c.min && value <= c.max
 	return match
+}
+
+func loadDataMiningConfiguration(path string) DataMiningConfiguration {
+	yamlData := readFile(path)
+	configuration := new(DataMiningConfiguration)
+	err := yaml.Unmarshal(yamlData, configuration)
+	if err != nil {
+		log.Fatal("Failed to unmarshal YAML:", err)
+	}
+	configuration.sanityCheck()
+	return *configuration
+}
+
+func (c *DataMiningConfiguration) sanityCheck() {
+	if len(c.Thresholds) == 0 {
+		log.Fatal("No data mining thresholds were specified")
+	}
+	if c.DateMin != nil && c.DateMax != nil && !c.DateMin.Before(c.DateMax.Time) {
+		format := "Invalid dateMin/dateMax values in data mining configuration: %s vs. %s"
+		log.Fatalf(format, getDateString(c.DateMin.Time), getDateString(c.DateMax.Time))
+	}
+	if c.TimeMin != nil && c.TimeMax != nil && c.TimeMin.Duration > c.TimeMax.Duration {
+		format := "Invalid timeMin/timeMax values in data mining configuration: %s vs. %s"
+		log.Fatalf(format, *c.TimeMin, *c.TimeMax)
+	}
 }

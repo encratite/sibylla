@@ -2,7 +2,6 @@ package sibylla
 
 import (
 	"log"
-	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -20,10 +19,6 @@ type Configuration struct {
 	WebPath string `yaml:"webPath"`
 	TempPath string `yaml:"tempPath"`
 	IconPath string `yaml:"iconPath"`
-}
-
-type SerializableDate struct {
-	time.Time
 }
 
 const configurationPath = "configuration/configuration.yaml"
@@ -64,13 +59,4 @@ func loadAssets() {
 	if err != nil {
 		log.Fatal("Failed to unmarshal YAML:", err)
 	}
-}
-
-func (d *SerializableDate) UnmarshalYAML(value *yaml.Node) error {
-	date, err := getDateErr(value.Value)
-	if err != nil {
-		return err
-	}
-	d.Time = date
-	return nil
 }

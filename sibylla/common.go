@@ -178,3 +178,13 @@ func contains[T comparable](slice []T, element T) bool {
 	}
 	return false
 }
+
+func compareFloat64(a, b float64) int {
+	if a < b {
+		return -1
+	} else if a > b {
+		return 1
+	} else {
+		return 0
+	}
+}
