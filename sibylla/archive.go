@@ -3,6 +3,7 @@ package sibylla
 import (
 	"compress/gzip"
 	"encoding/gob"
+	"fmt"
 	"log"
 	"os"
 	"time"
@@ -27,9 +28,14 @@ type FeatureRecord struct {
 	Momentum1DLag *float64
 	Momentum2D *float64
 	Momentum8H *float64
-	Returns24H *int
-	Returns48H *int
-	Returns72H *int
+	Returns24H *ReturnsRecord
+	Returns48H *ReturnsRecord
+	Returns72H *ReturnsRecord
+}
+
+type ReturnsRecord struct {
+	Ticks int
+	Percent float64
 }
 
 type featureAccessor struct {
@@ -42,7 +48,7 @@ type featureAccessor struct {
 type returnsAccessor struct {
 	name string
 	holdingTime int
-	get func (*FeatureRecord) *int
+	get func (*FeatureRecord) *ReturnsRecord
 }
 
 type archiveProperty struct {
@@ -140,21 +146,21 @@ func getReturnsAccessors() []returnsAccessor {
 		{
 			name: "returns24H",
 			holdingTime: 24,
-			get: func (f *FeatureRecord) *int {
+			get: func (f *FeatureRecord) *ReturnsRecord {
 				return f.Returns24H
 			},
 		},
 		{
 			name: "returns48H",
 			holdingTime: 48,
-			get: func (f *FeatureRecord) *int {
+			get: func (f *FeatureRecord) *ReturnsRecord {
 				return f.Returns48H
 			},
 		},
 		{
 			name: "returns72H",
 			holdingTime: 72,
-			get: func (f *FeatureRecord) *int {
+			get: func (f *FeatureRecord) *ReturnsRecord {
 				return f.Returns72H
 			},
 		},
@@ -174,25 +180,32 @@ func getArchiveProperties() []archiveProperty {
 	}
 	returnsAccessors := getReturnsAccessors()
 	for _, returns := range returnsAccessors {
-		property := archiveProperty{
+		ticksProperty := archiveProperty{
 			name: returns.name,
 			get: func (f *FeatureRecord) *float64 {
 				pointer := returns.get(f)
-				return getFloatPointer(pointer)
+				if pointer != nil {
+					value := float64(pointer.Ticks)
+					return &value
+				} else {
+					return nil
+				}
 			},
 		}
-		properties = append(properties, property)
+		percentageProperty := archiveProperty{
+			name: fmt.Sprintf("%s (%%)", returns.name),
+			get: func (f *FeatureRecord) *float64 {
+				pointer := returns.get(f)
+				if pointer != nil {
+					return &pointer.Percent
+				} else {
+					return nil
+				}
+			},
+		}
+		properties = append(properties, ticksProperty, percentageProperty)
 	}
 	return properties
-}
-
-func getFloatPointer(i *int) *float64 {
-	if i != nil {
-		f := float64(*i)
-		return &f
-	} else {
-		return nil
-	}
 }
 
 func (f *FeatureRecord) hasReturns() bool {

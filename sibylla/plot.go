@@ -20,8 +20,7 @@ func plotDailyRecords(records []DailyRecord, path string) {
 	plotterData := make(plotter.XYs, len(records))
 	for i, dataPoint := range records {
 		plotterData[i].X = timeToFloat(dataPoint.Date)
-		float, _ := dataPoint.Close.Float64()
-		plotterData[i].Y = float
+		plotterData[i].Y = dataPoint.Close.InexactFloat64()
 	}
 	ttfData := readFile(configuration.FontPath)
 	openTypeFont, err := opentype.Parse(ttfData)

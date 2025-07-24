@@ -3,6 +3,7 @@ package sibylla
 import (
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -33,6 +34,13 @@ type globexDateKey struct {
 type globexTimeKey struct {
 	symbol GlobexCode
 	timestamp time.Time
+}
+
+type readDailyRecordsResult struct {
+	openIntRecords []openInterestRecords
+	dailyCloses dailyCloseMap
+	includedRecords int
+	excludedRecords int
 }
 
 type openInterestMap map[time.Time][]dailyRecord
@@ -73,7 +81,7 @@ func generateArchives(asset Asset, forceOverwrite bool) {
 			return
 		}
 	}
-	openIntRecords, dailyCloses, includedRecords, excludedRecords := readDailyRecords(asset)
+	dailyRecordsResult := readDailyRecords(asset)
 	intradayCloses := readIntradayRecords(asset)
 	intradayTimestampsMap := map[time.Time]struct{}{}
 	for key := range intradayCloses {
@@ -86,8 +94,8 @@ func generateArchives(asset Asset, forceOverwrite bool) {
 	sort.Slice(intradayTimestamps, func (i, j int) bool {
 		return intradayTimestamps[i].Before(intradayTimestamps[j])
 	})
-	totalRecords := includedRecords + excludedRecords
-	exclusionRatio := float64(excludedRecords) / float64(totalRecords) * 100.0
+	totalRecords := dailyRecordsResult.includedRecords + dailyRecordsResult.excludedRecords
+	exclusionRatio := float64(dailyRecordsResult.excludedRecords) / float64(totalRecords) * 100.0
 	fmt.Printf("[%s] Excluded %.2f%% of records\n", asset.Symbol, exclusionRatio)
 	fLimit := 1
 	if asset.FRecords != nil {
@@ -96,8 +104,8 @@ func generateArchives(asset Asset, forceOverwrite bool) {
 	for fNumber := 1; fNumber <= fLimit; fNumber++ {
 		generateFRecords(
 			fNumber,
-			openIntRecords,
-			dailyCloses,
+			dailyRecordsResult.openIntRecords,
+			dailyRecordsResult.dailyCloses,
 			intradayCloses,
 			intradayTimestamps,
 			asset,
@@ -171,10 +179,27 @@ func processIntradayTimestamp(
 		return
 	}
 	momentumHelper := func (offsetDays, lagDays, offsetHours int) *float64 {
-		return getMomentum(offsetDays, lagDays, offsetHours, timestamp, close, symbol, dailyCloses, intradayCloses)
+		return getMomentum(
+			offsetDays,
+			lagDays,
+			offsetHours,
+			timestamp,
+			close,
+			symbol,
+			dailyCloses,
+			intradayCloses,
+		)
 	}
-	returnsHelper := func (offsetDays, offsetHours int) *int {
-		return getReturns(offsetDays, offsetHours, timestamp, close, symbol, intradayCloses, asset)
+	returnsHelper := func (offsetDays, offsetHours int) *ReturnsRecord {
+		return getReturns(
+			offsetDays,
+			offsetHours,
+			timestamp,
+			close,
+			symbol,
+			intradayCloses,
+			asset,
+		)
 	}
 	closeTimestamp := timestamp.Add(time.Hour)
 	features := FeatureRecord{
@@ -228,9 +253,7 @@ func getMomentum(
 		}
 		close = lagClose
 	}
-	closeFloat, _ := close.Float64()
-	offsetCloseFloat, _ := offsetClose.Float64()
-	momentum, valid := getRateOfChange(closeFloat, offsetCloseFloat)
+	momentum, valid := getRateOfChange(close.InexactFloat64(), offsetClose.InexactFloat64())
 	if !valid {
 		return nil
 	}
@@ -245,7 +268,7 @@ func getReturns(
 	symbol GlobexCode,
 	intradayCloses intradayCloseMap,
 	asset *Asset,
-) *int {
+) *ReturnsRecord {
 	adjustedTimestamp := getAdjustedTimestamp(offsetDays, offsetHours, timestamp)
 	key := getGlobexTimeKey(symbol, adjustedTimestamp)
 	horizonClose, exists := intradayCloses[key]
@@ -253,9 +276,26 @@ func getReturns(
 		delta := horizonClose.Sub(close.Decimal)
 		ticks := int(delta.Div(asset.TickSize.Decimal).IntPart())
 		if ticks < - returnsLimit || ticks > returnsLimit {
-			log.Fatalf("[%s] Excessive returns sample: adjustedTimestamp = %s, timestamp = %s, horizonClose = %s, close = %s, ticks = %d\n", asset.Symbol, getTimeString(adjustedTimestamp), getTimeString(timestamp), horizonClose.Decimal, close.Decimal, ticks)
+			format := "[%s] Excessive returns sample: adjustedTimestamp = %s, timestamp = %s, horizonClose = %s, close = %s, ticks = %d\n"
+			log.Fatalf(
+				format,
+				asset.Symbol,
+				getTimeString(adjustedTimestamp),
+				getTimeString(timestamp),
+				horizonClose.Decimal,
+				close.Decimal,
+				ticks,
+			)
 		}
-		return &ticks
+		percent, success := getRateOfChange(horizonClose.InexactFloat64(), close.InexactFloat64())
+		if !success {
+			percent = math.NaN();
+		}
+		record := ReturnsRecord{
+			Ticks: ticks,
+			Percent: percent,
+		}
+		return &record
 	} else {
 		return nil
 	}
@@ -295,7 +335,7 @@ func getFRecord(fNumber int, date time.Time, records []dailyRecord) *dailyRecord
 	return &records[index]
 }
 
-func readDailyRecords(asset Asset) ([]openInterestRecords, dailyCloseMap, int, int) {
+func readDailyRecords(asset Asset) readDailyRecordsResult {
 	path := getBarchartCsvPath(asset, "D1")
 	columns := []string{"symbol", "time", "close", "open_interest"}
 	openIntMap := openInterestMap{}
@@ -350,7 +390,13 @@ func readDailyRecords(asset Asset) ([]openInterestRecords, dailyCloseMap, int, i
 	sort.Slice(openIntRecords, func (i, j int) bool {
 		return openIntRecords[i].date.Before(openIntRecords[j].date)
 	})
-	return openIntRecords, dailyCloses, includedRecords, excludedRecords
+	result := readDailyRecordsResult {
+		openIntRecords: openIntRecords,
+		dailyCloses: dailyCloses,
+		includedRecords: includedRecords,
+		excludedRecords: excludedRecords,
+	}
+	return result
 }
 
 func readIntradayRecords(asset Asset) intradayCloseMap {
@@ -408,7 +454,7 @@ func (f *FeatureRecord) includeRecord() bool {
 			return true
 		}
 	}
-	returns := []*int{
+	returns := []*ReturnsRecord{
 		f.Returns24H,
 		f.Returns48H,
 		f.Returns72H,

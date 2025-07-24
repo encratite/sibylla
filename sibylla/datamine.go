@@ -2,10 +2,12 @@ package sibylla
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
 	"github.com/shopspring/decimal"
+	"gonum.org/v1/gonum/stat"
 )
 
 type positionSide int
@@ -40,6 +42,7 @@ type dataMiningResult struct {
 	returns returnsAccessor
 	side positionSide
 	equityCurve []equityCurveSample
+	sharpeRatio float64
 }
 
 type equityCurveSample struct {
@@ -94,17 +97,24 @@ func DataMine(fromString, toString, assetsString string) {
 	})
 	delta := time.Since(start)
 	fmt.Printf("Loaded archives in %.2f s\n", delta.Seconds())
+	start = time.Now()
 	tasks := getDataMiningTasks(assetRecords)
-	results := parallelMap(tasks, executeDataMiningTask)
-	fmt.Printf("Results: %d\n", len(results))
+	fmt.Printf("Data mining with %d tasks\n", len(tasks))
+	nestedResults := parallelMap(tasks, executeDataMiningTask)
+	results := []dataMiningResult{}
+	for _, r := range nestedResults {
+		results = append(results, r...)
+	}
+	delta = time.Since(start)
+	fmt.Printf("Finished data mining in %.2f s\n", delta.Seconds())
 }
 
 func getDataMiningTasks(assetRecords []assetRecords) []dataMiningTask {
 	accessors := getFeatureAccessors()
 	minMax := [][]float64{
-		{0.0, 0.3},
-		{0.35, 0.65},
-		{0.7, 1.0},
+		{0.0, 0.35},
+		{0.3, 0.7},
+		{0.65, 1.0},
 	}
 	tasks := []dataMiningTask{}
 	for i, asset1 := range assetRecords {
@@ -155,6 +165,7 @@ func executeDataMiningTask(task dataMiningTask) []dataMiningResult {
 	threshold2 := &task[1]
 	returnsAccessors := getReturnsAccessors()
 	results := []dataMiningResult{}
+	allReturnsSamples := [][]float64{}
 	sides := [2]positionSide{
 		SideLong,
 		SideShort,
@@ -168,6 +179,7 @@ func executeDataMiningTask(task dataMiningTask) []dataMiningResult {
 				equityCurve: []equityCurveSample{},
 			}
 			results = append(results, result)
+			allReturnsSamples = append(allReturnsSamples, []float64{})
 		}
 	}
 	for i := range threshold1.asset.records {
@@ -182,8 +194,9 @@ func executeDataMiningTask(task dataMiningTask) []dataMiningResult {
 		asset := &threshold1.asset.asset
 		for i := range results {
 			result := &results[i]
-			ticks := result.returns.get(record1)
-			if ticks == nil {
+			returnsSamples := &allReturnsSamples[i]
+			returnsRecord := result.returns.get(record1)
+			if returnsRecord == nil {
 				continue
 			}
 			cash := decimal.Zero
@@ -198,14 +211,25 @@ func executeDataMiningTask(task dataMiningTask) []dataMiningResult {
 				}
 				cash = lastSample.cash
 			}
-			returns := getAssetReturns(result.side, record1.Timestamp, *ticks, asset)
+			returns := getAssetReturns(result.side, record1.Timestamp, returnsRecord.Ticks, asset)
 			cash = cash.Add(returns)
 			sample := equityCurveSample{
 				timestamp: record1.Timestamp,
 				cash: cash,
 			}
 			*equityCurve = append(*equityCurve, sample)
+			if !math.IsNaN(returnsRecord.Percent) {
+				*returnsSamples = append(*returnsSamples, returnsRecord.Percent)
+			}
 		}
+	}
+	for i := range results {
+		result := &results[i]
+		returnsSamples := allReturnsSamples[i]
+		mean := stat.Mean(returnsSamples, nil)
+		stdDev := stat.StdDev(returnsSamples, nil)
+		sharpeRatio := mean / stdDev
+		result.sharpeRatio = sharpeRatio
 	}
 	return results
 }
