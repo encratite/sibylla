@@ -18,10 +18,23 @@ type YearlyTicks struct{}
 
 func plotDailyRecords(records []DailyRecord, path string) {
 	plotterData := make(plotter.XYs, len(records))
-	for i, dataPoint := range records {
-		plotterData[i].X = timeToFloat(dataPoint.Date)
-		plotterData[i].Y = dataPoint.Close.InexactFloat64()
+	for i, record := range records {
+		plotterData[i].X = timeToFloat(record.Date)
+		plotterData[i].Y = record.Close.InexactFloat64()
 	}
+	plotLine("Close", plotterData, path)
+}
+
+func plotEquityCurve(equityCurve []equityCurveSample, path string) {
+	plotterData := make(plotter.XYs, len(equityCurve))
+	for i, sample := range equityCurve {
+		plotterData[i].X = timeToFloat(sample.timestamp)
+		plotterData[i].Y = sample.cash.InexactFloat64()
+	}
+	plotLine("Cash", plotterData, path)
+}
+
+func plotLine(yLabel string, plotterData plotter.XYs, path string) {
 	ttfData := readFile(configuration.FontPath)
 	openTypeFont, err := opentype.Parse(ttfData)
 	if err != nil {
@@ -40,7 +53,7 @@ func plotDailyRecords(records []DailyRecord, path string) {
 	plot.DefaultFont = defaultFont
 	p := plot.New()
 	p.X.Label.Text = "Date"
-	p.Y.Label.Text = "Close"
+	p.Y.Label.Text = yLabel
 	p.X.Padding = -1
 	p.Y.Padding = -1
 	grid := plotter.NewGrid()
@@ -58,7 +71,7 @@ func plotDailyRecords(records []DailyRecord, path string) {
 	err = p.Save(12 * vg.Inch, 8 * vg.Inch, path)
 	if err != nil {
 		log.Fatal("Failed to save plot:", err)
-	}	
+	}
 }
 
 func plotFeatureHistogram(stdDev float64, values []float64, path string) {

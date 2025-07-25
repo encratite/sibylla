@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"path/filepath"
 	"slices"
 	"time"
 
@@ -11,6 +12,8 @@ import (
 	"gonum.org/v1/gonum/stat"
 	"gopkg.in/yaml.v3"
 )
+
+const dataMiningScript = "dataMining.js"
 
 type DataMiningConfiguration struct {
 	Assets []string `yaml:"assets"`
@@ -37,7 +40,8 @@ type assetPath struct {
 
 type assetRecords struct {
 	asset Asset
-	records []FeatureRecord
+	dailyRecords []DailyRecord
+	intradayRecords []FeatureRecord
 	recordsMap map[time.Time]*FeatureRecord
 }
 
@@ -61,6 +65,36 @@ type dataMiningResult struct {
 type equityCurveSample struct {
 	timestamp time.Time
 	cash decimal.Decimal
+}
+
+type DataMiningModel struct {
+	DateMin *string `json:"dateMin"`
+	DateMax *string `json:"dateMax"`
+	TimeMin *string `json:"timeMin"`
+	TimeMax *string `json:"timeMax"`
+	Weekdays []int `json:"weekdays"`
+	Thresholds [][]float64 `json:"thresholds"`
+	Results []AssetMiningResults `json:"results"`
+}
+
+type AssetMiningResults struct {
+	Symbol string `json:"symbols"`
+	Plot string `json:"plot"`
+	Strategies []StrategyMiningResult `json:"strategies"`
+}
+
+type StrategyMiningResult struct {
+	Features []StrategyFeature `json:"features"`
+	Exit string `json:"exit"`
+	Returns float64 `json:"returns"`
+	RiskAdjusted float64 `json:"riskAdjusted"`
+	Plot string `json:"plot"`
+}
+
+type StrategyFeature struct {
+	Name string `json:"name"`
+	Min float64 `json:"min"`
+	Max float64 `json:"max"`
 }
 
 func DataMine(yamlPath string) {
@@ -88,29 +122,40 @@ func DataMine(yamlPath string) {
 	start := time.Now()
 	assetRecords := parallelMap(assetPaths, func (assetPath assetPath) assetRecords {
 		archive := readArchive(assetPath.path)
-		records := []FeatureRecord{}
+		dailyRecords := []DailyRecord{}
+		intradayRecords := []FeatureRecord{}
 		recordsMap := map[time.Time]*FeatureRecord{}
+		for _, record := range archive.DailyRecords {
+			isValid, breakLoop := miningConfig.isValidDate(record.Date)
+			if !isValid {
+				if breakLoop {
+					break
+				} else {
+					continue
+				}
+			}
+			dailyRecords = append(dailyRecords, record)
+		}
 		for _, record := range archive.IntradayRecords {
-			if miningConfig.DateMin != nil && record.Timestamp.Before(miningConfig.DateMin.Time) {
+			isValid, breakLoop := miningConfig.isValidDate(record.Timestamp)
+			if !isValid {
+				if breakLoop {
+					break
+				} else {
+					continue
+				}
+			}
+			isValid = miningConfig.isValidTime(record.Timestamp)
+			if !isValid {
 				continue
 			}
-			if miningConfig.DateMax != nil && !record.Timestamp.Before(miningConfig.DateMax.Time) {
-				break
-			}
-			date := getDateFromTime(record.Timestamp)
-			timeOfDay := record.Timestamp.Sub(date)
-			if miningConfig.TimeMin != nil && timeOfDay < miningConfig.TimeMin.Duration {
-				continue
-			}
-			if miningConfig.TimeMax != nil && timeOfDay > miningConfig.TimeMax.Duration {
-				continue
-			}
-			records = append(records, record)
+			intradayRecords = append(intradayRecords, record)
 			recordsMap[record.Timestamp] = &record
 		}
 		return assetRecords{
 			asset: assetPath.asset,
-			records: records,
+			dailyRecords: dailyRecords,
+			intradayRecords: intradayRecords,
 			recordsMap: recordsMap,
 		}
 	})
@@ -122,6 +167,7 @@ func DataMine(yamlPath string) {
 	taskResults := parallelMap(tasks, executeDataMiningTask)
 	delta = time.Since(start)
 	fmt.Printf("Finished data mining in %.2f s\n", delta.Seconds())
+	start = time.Now()
 	assetResults := map[string][]dataMiningResult{}
 	for _, results := range taskResults {
 		for _, result := range results {
@@ -139,6 +185,16 @@ func DataMine(yamlPath string) {
 		}
 		assetResults[symbol] = results
 	}
+	dailyRecords := map[string][]DailyRecord{}
+	for _, records := range assetRecords {
+		key := records.asset.Symbol
+		dailyRecords[key] = records.dailyRecords
+	}
+	model := getDataMiningModel(assetResults, dailyRecords, miningConfig)
+	delta = time.Since(start)
+	fmt.Printf("Finished post-processing results in %.2f s\n", delta.Seconds())
+	title := "Data Mining"
+	runBrowser(title, dataMiningScript, model)
 }
 
 func getDataMiningTasks(assetRecords []assetRecords, miningConfig DataMiningConfiguration) []dataMiningTask {
@@ -200,8 +256,8 @@ func executeDataMiningTask(task dataMiningTask) []dataMiningResult {
 			allReturnsSamples = append(allReturnsSamples, []float64{})
 		}
 	}
-	for i := range threshold1.asset.records {
-		record1 := &threshold1.asset.records[i]
+	for i := range threshold1.asset.intradayRecords {
+		record1 := &threshold1.asset.intradayRecords[i]
 		if !record1.hasReturns() || !threshold1.match(record1) {
 			continue
 		}
@@ -302,4 +358,122 @@ func (c *DataMiningConfiguration) sanityCheck() {
 		format := "Invalid timeMin/timeMax values in data mining configuration: %s vs. %s"
 		log.Fatalf(format, *c.TimeMin, *c.TimeMax)
 	}
+}
+
+func (c *DataMiningConfiguration) isValidDate(timestamp time.Time) (bool, bool) {
+	if c.DateMin != nil && timestamp.Before(c.DateMin.Time) {
+		return false, false
+	}
+	if c.DateMax != nil && !timestamp.Before(c.DateMax.Time) {
+		return false, true
+	}
+	return true, false
+}
+
+func (c *DataMiningConfiguration) isValidTime(timestamp time.Time) bool {
+	date := getDateFromTime(timestamp)
+	timeOfDay := timestamp.Sub(date)
+	if c.TimeMin != nil && timeOfDay < c.TimeMin.Duration {
+		return false
+	}
+	if c.TimeMax != nil && timeOfDay > c.TimeMax.Duration {
+		return false
+	}
+	return true
+}
+
+func getDataMiningModel(
+	assetResults map[string][]dataMiningResult,
+	dailyRecords map[string][]DailyRecord,
+	miningConfig DataMiningConfiguration,
+) DataMiningModel {
+	model := DataMiningModel{
+		DateMin: getDateStringPointer(miningConfig.DateMin),
+		DateMax: getDateStringPointer(miningConfig.DateMax),
+		TimeMin: getTimeOfDayStringPointer(miningConfig.TimeMin),
+		TimeMax: getTimeOfDayStringPointer(miningConfig.TimeMax),
+		Weekdays: getWeekdayInts(miningConfig.Weekdays),
+		Thresholds: miningConfig.Thresholds,
+		Results: []AssetMiningResults{},
+	}
+	symbols := []string{}
+	for symbol := range assetResults {
+		symbols = append(symbols, symbol)
+	}
+	model.Results = parallelMap(symbols, func (symbol string) AssetMiningResults {
+		results, exists := assetResults[symbol]
+		if !exists {
+			log.Fatalf("Unable to find matching results for symbol %s", symbol)
+		}
+		plotRecords, exists := dailyRecords[symbol]
+		if !exists {
+			log.Fatalf("Unable to find matching daily records for symbol %s", symbol)
+		}
+		fileName := fmt.Sprintf("%s.daily.png", symbol)
+		dailyRecordsPlotPath := filepath.Join(configuration.TempPath, fileName)
+		plotDailyRecords(plotRecords, dailyRecordsPlotPath)
+		assetMiningResults := AssetMiningResults{
+			Symbol: symbol,
+			Plot: dailyRecordsPlotPath,
+			Strategies: []StrategyMiningResult{},
+		}
+		for i, result := range results {
+			miningResult := getStrategyMiningResult(symbol, i + 1, result)
+			assetMiningResults.Strategies = append(assetMiningResults.Strategies, miningResult)
+		}
+		return assetMiningResults
+	})
+	return model
+}
+
+func getDateStringPointer(date *SerializableDate) *string {
+	if date != nil {
+		output := getDateString(date.Time)
+		return &output
+	} else {
+		return nil
+	}
+}
+
+func getTimeOfDayStringPointer(t *SerializableDuration) *string {
+	if t != nil {
+		output := fmt.Sprintf("%02d:%02d", int(t.Hours()), int(t.Minutes()) % 60)
+		return &output
+	} else {
+		return nil
+	}
+}
+
+func getWeekdayInts(weekdays []SerializableWeekday) []int {
+	output := []int{}
+	for _, w := range weekdays {
+		output = append(output, int(w.Weekday))
+	}
+	return output
+}
+
+func getStrategyMiningResult(symbol string, index int, result dataMiningResult) StrategyMiningResult {
+	equityCurve := result.equityCurve
+	first := equityCurve[0]
+	last := equityCurve[len(equityCurve) - 1]
+	returns := last.cash.Sub(first.cash).InexactFloat64()
+	fileName := fmt.Sprintf("%s.strategy%02d.png", symbol, index)
+	dailyRecordsPlotPath := filepath.Join(configuration.TempPath, fileName)
+	plotEquityCurve(equityCurve, dailyRecordsPlotPath)
+	output := StrategyMiningResult{
+		Features: []StrategyFeature{},
+		Exit: result.returns.name,
+		Returns: returns,
+		RiskAdjusted: result.riskAdjusted,
+		Plot: dailyRecordsPlotPath,
+	}
+	for _, threshold := range result.task {
+		feature := StrategyFeature{
+			Name: threshold.feature.name,
+			Min: threshold.min,
+			Max: threshold.max,
+		}
+		output.Features = append(output.Features, feature)
+	}
+	return output
 }
