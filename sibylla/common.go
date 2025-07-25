@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"runtime"
 	"sync"
 	"time"
@@ -122,6 +123,22 @@ func writeFile(path, data string) {
 	err := os.WriteFile(path, bytes, 0644)
 	if err != nil {
 		log.Fatalf("Failed to write file (%s): %v", path, err)
+	}
+}
+
+func clearDirectory(path string) {
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		log.Fatalf("Failed to read directory (%s): %v", path, err)
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			filePath := filepath.Join(path, entry.Name())
+			err := os.Remove(filePath)
+			if err != nil {
+				log.Fatalf("Failed to delete file (%s): %v", filePath, err)
+			}
+		}
 	}
 }
 

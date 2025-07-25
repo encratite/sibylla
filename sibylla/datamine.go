@@ -13,7 +13,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const dataMiningScript = "dataMining.js"
+const dataMiningScript = "datamine.js"
+const hoursPerYear = 365.25 * 24
+const tradingDaysPerYear = 252
 
 type DataMiningConfiguration struct {
 	Assets []string `yaml:"assets"`
@@ -23,6 +25,7 @@ type DataMiningConfiguration struct {
 	TimeMin *SerializableDuration `yaml:"timeMin"`
 	TimeMax *SerializableDuration `yaml:"timeMax"`
 	Weekdays []SerializableWeekday `yaml:"weekdays"`
+	TradesMin float64 `yaml:"tradesMin"`
 	Thresholds [][]float64 `yaml:"thresholds"`
 }
 
@@ -60,6 +63,7 @@ type dataMiningResult struct {
 	side positionSide
 	equityCurve []equityCurveSample
 	riskAdjusted float64
+	tradesRatio float64
 }
 
 type equityCurveSample struct {
@@ -88,6 +92,7 @@ type StrategyMiningResult struct {
 	Exit string `json:"exit"`
 	Returns float64 `json:"returns"`
 	RiskAdjusted float64 `json:"riskAdjusted"`
+	TradesRatio float64 `json:"tradesRatio"`
 	Plot string `json:"plot"`
 }
 
@@ -164,13 +169,18 @@ func DataMine(yamlPath string) {
 	start = time.Now()
 	tasks := getDataMiningTasks(assetRecords, miningConfig)
 	fmt.Printf("Data mining with %d tasks\n", len(tasks))
-	taskResults := parallelMap(tasks, executeDataMiningTask)
+	taskResults := parallelMap(tasks, func (task dataMiningTask) []dataMiningResult {
+		return executeDataMiningTask(task, miningConfig)
+	})
 	delta = time.Since(start)
 	fmt.Printf("Finished data mining in %.2f s\n", delta.Seconds())
 	start = time.Now()
 	assetResults := map[string][]dataMiningResult{}
 	for _, results := range taskResults {
 		for _, result := range results {
+			if result.tradesRatio < miningConfig.TradesMin {
+				continue
+			}
 			key := result.task[0].asset.asset.Symbol
 			assetResults[key] = append(assetResults[key], result)
 		}
@@ -190,6 +200,7 @@ func DataMine(yamlPath string) {
 		key := records.asset.Symbol
 		dailyRecords[key] = records.dailyRecords
 	}
+	clearDirectory(configuration.TempPath)
 	model := getDataMiningModel(assetResults, dailyRecords, miningConfig)
 	delta = time.Since(start)
 	fmt.Printf("Finished post-processing results in %.2f s\n", delta.Seconds())
@@ -234,7 +245,7 @@ func newDataMiningThreshold(asset assetRecords, feature featureAccessor, minMax 
 	}
 }
 
-func executeDataMiningTask(task dataMiningTask) []dataMiningResult {
+func executeDataMiningTask(task dataMiningTask, miningConfig DataMiningConfiguration) []dataMiningResult {
 	threshold1 := &task[0]
 	threshold2 := &task[1]
 	returnsAccessors := getReturnsAccessors()
@@ -302,8 +313,12 @@ func executeDataMiningTask(task dataMiningTask) []dataMiningResult {
 		returnsSamples := allReturnsSamples[i]
 		mean := stat.Mean(returnsSamples, nil)
 		stdDev := stat.StdDev(returnsSamples, nil)
+		if result.side == SideShort {
+			mean = - mean
+		}
 		riskAdjusted := mean / stdDev
 		result.riskAdjusted = riskAdjusted
+		result.tradesRatio = getTradesRatio(result.equityCurve, miningConfig)
 	}
 	return results
 }
@@ -452,7 +467,11 @@ func getWeekdayInts(weekdays []SerializableWeekday) []int {
 	return output
 }
 
-func getStrategyMiningResult(symbol string, index int, result dataMiningResult) StrategyMiningResult {
+func getStrategyMiningResult(
+	symbol string,
+	index int,
+	result dataMiningResult,
+) StrategyMiningResult {
 	equityCurve := result.equityCurve
 	first := equityCurve[0]
 	last := equityCurve[len(equityCurve) - 1]
@@ -465,6 +484,7 @@ func getStrategyMiningResult(symbol string, index int, result dataMiningResult) 
 		Exit: result.returns.name,
 		Returns: returns,
 		RiskAdjusted: result.riskAdjusted,
+		TradesRatio: result.tradesRatio,
 		Plot: dailyRecordsPlotPath,
 	}
 	for _, threshold := range result.task {
@@ -476,4 +496,30 @@ func getStrategyMiningResult(symbol string, index int, result dataMiningResult) 
 		output.Features = append(output.Features, feature)
 	}
 	return output
+}
+
+func getTradesRatio(equityCurve []equityCurveSample, miningConfig DataMiningConfiguration) float64 {
+	first := equityCurve[0]
+	last := equityCurve[len(equityCurve) - 1]
+	var start, end time.Time
+	if miningConfig.DateMin != nil {
+		start = (*miningConfig.DateMin).Time
+	} else {
+		start = first.timestamp
+	}
+	if miningConfig.DateMax != nil {
+		end = (*miningConfig.DateMax).Time
+	} else {
+		end = last.timestamp
+	}
+	duration := end.Sub(start)
+	daysTradedMap := map[time.Time]struct{}{}
+	for _, record := range equityCurve {
+		date := getDateFromTime(record.timestamp)
+		daysTradedMap[date] = struct{}{}
+	}
+	daysTraded := len(daysTradedMap)
+	years := duration.Hours() / hoursPerYear
+	tradesRatio := float64(daysTraded) / (tradingDaysPerYear * years)
+	return tradesRatio
 }

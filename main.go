@@ -26,7 +26,7 @@ func main() {
 		sibylla.Generate(generateSymbol)
 	} else if *viewArchive != "" {
 		sibylla.ViewArchive(*viewArchive)
-	} else if dataMine != nil {
+	} else if *dataMine != "" {
 		sibylla.DataMine(*dataMine)
 	} else {
 		flag.Usage()

@@ -38,6 +38,7 @@ func ViewArchive(symbol string) {
 	}
 	archivePath := filepath.Join(configuration.GobPath, fileName)
 	archive := readArchive(archivePath)
+	clearDirectory(configuration.TempPath)
 	dailyRecordsPlotPath := filepath.Join(configuration.TempPath, dailyRecordsPlot)
 	plotDailyRecords(archive.DailyRecords, dailyRecordsPlotPath)
 	propertyStats := getPropertyStats(archive)

@@ -11,10 +11,12 @@ import (
 	"github.com/lxn/win"
 )
 
-const templateFilename = "template.html"
-const stylesheet = "style.css"
+const templateFileName = "index.html"
+const stylesheetFileName = "style.css"
+const commonScriptFileName = "common.js"
 const stylesheetPlaceholder = "STYLESHEET_PATH"
 const jsonPlaceholder = "MODEL_JSON"
+const commonPathPlaceholder = "COMMON_PATH"
 const scriptPathPlaceholder = "SCRIPT_PATH"
 
 func runBrowser(title, script string, model any) {
@@ -54,7 +56,7 @@ func runBrowser(title, script string, model any) {
 	win.SendMessage(win.HWND(hWnd), win.WM_SETICON, 0, uintptr(hIcon))
 	scriptPath := filepath.Join(configuration.WebPath, script)
 	html := getTemplateHtml(scriptPath, model)
-	htmlPath := filepath.Join(configuration.TempPath, templateFilename)
+	htmlPath := filepath.Join(configuration.TempPath, templateFileName)
 	writeFile(htmlPath, html)
 	htmlURL := getFileURL(htmlPath)
 	w.Navigate(htmlURL)
@@ -62,7 +64,7 @@ func runBrowser(title, script string, model any) {
 }
 
 func getTemplateHtml(scriptPath string, model any) string {
-	templatePath := filepath.Join(configuration.WebPath, templateFilename)
+	templatePath := filepath.Join(configuration.WebPath, templateFileName)
 	templateBytes := readFile(templatePath)
 	templateString := string(templateBytes)
 	jsonBytes, err := json.Marshal(model)
@@ -70,11 +72,14 @@ func getTemplateHtml(scriptPath string, model any) string {
 		log.Fatal("Failed to serialize validation model to JSON:", err)
 	}
 	jsonString := string(jsonBytes)
-	stylesheetPath := filepath.Join(configuration.WebPath, stylesheet)
+	commonPath := filepath.Join(configuration.WebPath, commonScriptFileName)
+	stylesheetPath := filepath.Join(configuration.WebPath, stylesheetFileName)
+	commonURL := getFileURL(commonPath)
 	scriptURL := getFileURL(scriptPath)
 	html := templateString
 	html = strings.Replace(html, stylesheetPlaceholder, stylesheetPath, 1)
 	html = strings.Replace(html, jsonPlaceholder, jsonString, 1)
+	html = strings.Replace(html, commonPathPlaceholder, commonURL, 1)
 	html = strings.Replace(html, scriptPathPlaceholder, scriptURL, 1)
 	return html
 }
