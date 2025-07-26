@@ -227,3 +227,15 @@ func parseFloat(floatString string) float64 {
 	}
 	return float
 }
+
+func formatMoney(amount int64) string {
+	amountString := fmt.Sprintf("%d", amount)
+	output := "$"
+	for i, character := range amountString {
+		if i > 0 && (len(amountString) - i) % 3 == 0 {
+			output += ","
+		}
+		output += string(character)
+	}
+	return output
+}

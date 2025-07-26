@@ -16,13 +16,15 @@ import (
 
 type YearlyTicks struct{}
 
+type MoneyTicks struct{}
+
 func plotDailyRecords(records []DailyRecord, path string) {
 	plotterData := make(plotter.XYs, len(records))
 	for i, record := range records {
 		plotterData[i].X = timeToFloat(record.Date)
 		plotterData[i].Y = record.Close
 	}
-	plotLine("Close", plotterData, path)
+	plotLine("Close", plotterData, false, path)
 }
 
 func plotEquityCurve(equityCurve []equityCurveSample, path string) {
@@ -31,10 +33,10 @@ func plotEquityCurve(equityCurve []equityCurveSample, path string) {
 		plotterData[i].X = timeToFloat(sample.timestamp)
 		plotterData[i].Y = sample.cash
 	}
-	plotLine("Cash", plotterData, path)
+	plotLine("Money", plotterData, true, path)
 }
 
-func plotLine(yLabel string, plotterData plotter.XYs, path string) {
+func plotLine(yLabel string, plotterData plotter.XYs, money bool, path string) {
 	ttfData := readFile(configuration.FontPath)
 	openTypeFont, err := opentype.Parse(ttfData)
 	if err != nil {
@@ -62,6 +64,9 @@ func plotLine(yLabel string, plotterData plotter.XYs, path string) {
 	grid.Vertical.Dashes = dashes
 	p.Add(grid)
 	p.X.Tick.Marker = YearlyTicks{}
+	if money {
+		p.Y.Tick.Marker = MoneyTicks{}
+	}
 	line, err := plotter.NewLine(plotterData)
 	if err != nil {
 		log.Fatal("Failed to create line plot:", err)
@@ -121,6 +126,17 @@ func (YearlyTicks) Ticks(min, max float64) []plot.Tick {
 		x := timeToFloat(tickTime)
 		label := tickTime.Format("2006")
 		ticks = append(ticks, plot.Tick{Value: x, Label: label})
+	}
+	return ticks
+}
+
+func (MoneyTicks) Ticks(min, max float64) []plot.Tick {
+	ticks := plot.DefaultTicks{}.Ticks(min, max)
+	for i := range ticks {
+		if ticks[i].Label != "" {
+			amount := int64(ticks[i].Value)
+			ticks[i].Label = formatMoney(amount)
+		}
 	}
 	return ticks
 }
