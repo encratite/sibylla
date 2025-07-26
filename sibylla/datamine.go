@@ -344,6 +344,13 @@ func executeDataMiningTask(task dataMiningTask, bar *pb.ProgressBar, miningConfi
 			}
 		}
 	}
+	filteredResults := []dataMiningResult{}
+	for _, result := range results {
+		if len(result.equityCurve) > 0 {
+			filteredResults = append(filteredResults, result)
+		}
+	}
+	results = filteredResults
 	for i := range results {
 		result := &results[i]
 		returnsSamples := allReturnsSamples[i]
