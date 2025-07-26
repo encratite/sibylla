@@ -19,11 +19,19 @@ const jsonPlaceholder = "MODEL_JSON"
 const commonPathPlaceholder = "COMMON_PATH"
 const scriptPathPlaceholder = "SCRIPT_PATH"
 
-func runBrowser(title, script string, model any) {
+func runBrowser(title, script string, model any, large bool) {
+	var width, height uint
+	if large {
+		width = 1440
+		height = 1080
+	} else {
+		width = 1280
+		height = 960
+	}
 	windowOptions := webview2.WindowOptions{
 		Title: title,
-		Width: 1440,
-		Height: 1080,
+		Width: width,
+		Height: height,
 		Center: true,
 	}
 	options := webview2.WebViewOptions{

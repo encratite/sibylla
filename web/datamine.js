@@ -1,7 +1,7 @@
 function renderDataMiningUI() {
 	const model = getModel();
 	const topLevel = createElement("div", document.body, {
-		className: "container"
+		className: "container-data-mine"
 	});
 	model.results.forEach(asset => {
 		const table = createElement("table", topLevel, "assets");

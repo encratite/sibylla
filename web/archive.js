@@ -1,6 +1,6 @@
 function renderArchiveUI() {
 	const model = getModel();
-	const topLevel = createElement("div", document.body, "container");
+	const topLevel = createElement("div", document.body, "container-archive");
 	const dailyRecords = createElement("div", topLevel, "dailyRecords");
 	createElement("img", dailyRecords, {
 		src: model.plot

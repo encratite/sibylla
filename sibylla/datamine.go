@@ -118,7 +118,7 @@ func DataMine(yamlPath string) {
 	launchProfiler()
 	model := executeDataMiningConfig(miningConfig)
 	runtime.GC()
-	runBrowser("Data Mining", dataMiningScript, model)
+	runBrowser("Data Mining", dataMiningScript, model, true)
 }
 
 func executeDataMiningConfig(miningConfig DataMiningConfiguration) DataMiningModel {

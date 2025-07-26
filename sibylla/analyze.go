@@ -48,7 +48,7 @@ func ViewArchive(symbol string) {
 		Properties: propertyStats,
 	}
 	title := fmt.Sprintf("View Archive - %s", symbol)
-	runBrowser(title, archiveScript, model)
+	runBrowser(title, archiveScript, model, false)
 }
 
 func getPropertyStats(archive Archive) []PropertyStats {

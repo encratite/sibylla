@@ -2,7 +2,12 @@
 	font-family: "Roboto", sans-serif;
 }
 
-.container {
+.container-archive {
+	margin: auto;
+	width: 1200px;
+}
+
+.container-data-mine {
 	margin: auto;
 	width: 1360px;
 }

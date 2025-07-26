@@ -111,7 +111,7 @@ func getFeatureAccessors() []featureAccessor {
 			},
 		},
 		{
-			name: "momentum1D",
+			name: "momentum1DLag",
 			get: func (f *FeatureRecord) *float64 {
 				return f.Momentum1DLag
 			},
