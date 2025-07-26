@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -217,4 +218,12 @@ func launchProfiler() {
 			}
 		}()
 	}
+}
+
+func parseFloat(floatString string) float64 {
+	float, err := strconv.ParseFloat(floatString, 64)
+	if err != nil {
+		log.Fatalf("Failed to convert string \"%s\" to float: %v", floatString, err)
+	}
+	return float
 }

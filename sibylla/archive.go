@@ -19,7 +19,7 @@ type Archive struct {
 
 type DailyRecord struct {
 	Date time.Time
-	Close SerializableDecimal
+	Close float64
 }
 
 type FeatureRecord struct {

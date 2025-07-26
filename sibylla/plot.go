@@ -20,7 +20,7 @@ func plotDailyRecords(records []DailyRecord, path string) {
 	plotterData := make(plotter.XYs, len(records))
 	for i, record := range records {
 		plotterData[i].X = timeToFloat(record.Date)
-		plotterData[i].Y = record.Close.InexactFloat64()
+		plotterData[i].Y = record.Close
 	}
 	plotLine("Close", plotterData, path)
 }
@@ -29,7 +29,7 @@ func plotEquityCurve(equityCurve []equityCurveSample, path string) {
 	plotterData := make(plotter.XYs, len(equityCurve))
 	for i, sample := range equityCurve {
 		plotterData[i].X = timeToFloat(sample.timestamp)
-		plotterData[i].Y = sample.cash.InexactFloat64()
+		plotterData[i].Y = sample.cash
 	}
 	plotLine("Cash", plotterData, path)
 }

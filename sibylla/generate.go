@@ -9,8 +9,6 @@ import (
 	"sort"
 	"strconv"
 	"time"
-
-	"github.com/shopspring/decimal"
 )
 
 const returnsLimit = 100000
@@ -22,7 +20,7 @@ type openInterestRecords struct {
 
 type dailyRecord struct {
 	symbol GlobexCode
-	close SerializableDecimal
+	close float64
 	openInterest int
 }
 
@@ -45,8 +43,8 @@ type readDailyRecordsResult struct {
 
 type openInterestMap map[time.Time][]dailyRecord
 type dailyRecordMap map[time.Time]dailyRecord
-type dailyCloseMap map[globexDateKey]SerializableDecimal
-type intradayCloseMap map[globexTimeKey]SerializableDecimal
+type dailyCloseMap map[globexDateKey]float64
+type intradayCloseMap map[globexTimeKey]float64
 
 func Generate(symbol *string) {
 	loadConfiguration()
@@ -222,13 +220,13 @@ func getMomentum(
 	lagDays int,
 	offsetHours int,
 	timestamp time.Time,
-	close SerializableDecimal,
+	close float64,
 	symbol GlobexCode,
 	dailyCloses dailyCloseMap,
 	intradayCloses intradayCloseMap,
 ) *float64 {
 	offsetTimestamp := getAdjustedTimestamp(-offsetDays, -offsetHours, timestamp)
-	var offsetClose SerializableDecimal
+	var offsetClose float64
 	if offsetHours == 0 {
 		key := getGlobexDateKey(symbol, offsetTimestamp)
 		dailyClose, exists := dailyCloses[key]
@@ -253,7 +251,7 @@ func getMomentum(
 		}
 		close = lagClose
 	}
-	momentum, valid := getRateOfChange(close.InexactFloat64(), offsetClose.InexactFloat64())
+	momentum, valid := getRateOfChange(close, offsetClose)
 	if !valid {
 		return nil
 	}
@@ -264,7 +262,7 @@ func getReturns(
 	offsetDays int,
 	offsetHours int,
 	timestamp time.Time,
-	close SerializableDecimal,
+	close float64,
 	symbol GlobexCode,
 	intradayCloses intradayCloseMap,
 	asset *Asset,
@@ -273,8 +271,8 @@ func getReturns(
 	key := getGlobexTimeKey(symbol, adjustedTimestamp)
 	horizonClose, exists := intradayCloses[key]
 	if exists {
-		delta := horizonClose.Sub(close.Decimal)
-		ticks := int(delta.Div(asset.TickSize.Decimal).IntPart())
+		delta := horizonClose - close
+		ticks := int(delta / asset.TickSize)
 		if ticks < - returnsLimit || ticks > returnsLimit {
 			format := "[%s] Excessive returns sample: adjustedTimestamp = %s, timestamp = %s, horizonClose = %s, close = %s, ticks = %d\n"
 			log.Fatalf(
@@ -282,12 +280,12 @@ func getReturns(
 				asset.Symbol,
 				getTimeString(adjustedTimestamp),
 				getTimeString(timestamp),
-				horizonClose.Decimal,
-				close.Decimal,
+				horizonClose,
+				close,
 				ticks,
 			)
 		}
-		percent, success := getRateOfChange(horizonClose.InexactFloat64(), close.InexactFloat64())
+		percent, success := getRateOfChange(horizonClose, close)
 		if !success {
 			percent = math.NaN();
 		}
@@ -358,8 +356,7 @@ func readDailyRecords(asset Asset) readDailyRecordsResult {
 			excludedRecords += 1
 			return
 		}
-		closeDecimal := getDecimal(values[2], path)
-		close := SerializableDecimal(closeDecimal)
+		close := parseFloat(values[2])
 		openInterestString := values[3]
 		openInterest, err := strconv.Atoi(openInterestString)
 		if err != nil {
@@ -417,22 +414,12 @@ func readIntradayRecords(asset Asset) intradayCloseMap {
 				return
 			}
 		}
-		close := getDecimal(values[2], path)
+		close := parseFloat(values[2])
 		key := getGlobexTimeKey(symbol, timestamp)
 		recordsMap[key] = close
 	}
 	readCsv(path, columns, callback)
 	return recordsMap
-}
-
-func getDecimal(s string, path string) SerializableDecimal {
-	value, err := decimal.NewFromString(s)
-	if err != nil {
-		log.Fatalf("Failed to parse decimal string \"%s\" in CSV file (%s): %v", s, path, err)
-	}
-	return SerializableDecimal{
-		Decimal: value,
-	}
 }
 
 func getBarchartCsvPath(asset Asset, suffix string) string {

@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/cheggaaa/pb"
-	"github.com/shopspring/decimal"
 	"gonum.org/v1/gonum/stat"
 	"gopkg.in/yaml.v3"
 )
@@ -71,7 +70,7 @@ type dataMiningResult struct {
 
 type equityCurveSample struct {
 	timestamp time.Time
-	cash decimal.Decimal
+	cash float64
 }
 
 type DataMiningModel struct {
@@ -316,7 +315,7 @@ func executeDataMiningTask(task dataMiningTask, bar *pb.ProgressBar, miningConfi
 			if returnsRecord == nil {
 				continue
 			}
-			cash := decimal.Zero
+			cash := 0.0
 			equityCurve := &result.equityCurve
 			length := len(*equityCurve)
 			if length > 0 {
@@ -329,7 +328,7 @@ func executeDataMiningTask(task dataMiningTask, bar *pb.ProgressBar, miningConfi
 				cash = lastSample.cash
 			}
 			returns := getAssetReturns(result.side, record1.Timestamp, returnsRecord.Ticks, asset)
-			cash = cash.Add(returns)
+			cash += returns
 			sample := equityCurveSample{
 				timestamp: record1.Timestamp,
 				cash: cash,
@@ -356,20 +355,19 @@ func executeDataMiningTask(task dataMiningTask, bar *pb.ProgressBar, miningConfi
 	return results
 }
 
-func getAssetReturns(side positionSide, timestamp time.Time, ticks int, asset *Asset) decimal.Decimal {
+func getAssetReturns(side positionSide, timestamp time.Time, ticks int, asset *Asset) float64 {
 	if side == SideLong {
 		ticks -= asset.Spread
 	} else {
 		ticks += asset.Spread
 	}
-	ticksDecimal := decimal.NewFromInt(int64(ticks))
-	rawGains := ticksDecimal.Mul(asset.TickValue.Decimal)
+	rawGains := float64(ticks) * asset.TickValue
 	gains := convertCurrency(timestamp, rawGains, asset.Currency)
 	if side == SideShort {
-		gains = gains.Neg()
+		gains = - gains
 	}
-	fees := asset.BrokerFee.Decimal.Add(asset.ExchangeFee.Decimal)
-	gains = gains.Sub(fees)
+	fees := asset.BrokerFee + asset.ExchangeFee
+	gains -= fees
 	return gains
 }
 
@@ -513,7 +511,7 @@ func getStrategyMiningResult(
 	equityCurve := result.equityCurve
 	first := equityCurve[0]
 	last := equityCurve[len(equityCurve) - 1]
-	returns := last.cash.Sub(first.cash).InexactFloat64()
+	returns := last.cash - first.cash
 	fileName := fmt.Sprintf("%s.strategy%02d.png", symbol, index)
 	dailyRecordsPlotPath := filepath.Join(configuration.TempPath, fileName)
 	plotEquityCurve(equityCurve, dailyRecordsPlotPath)

@@ -27,11 +27,11 @@ type Asset struct {
 
 	// Asset definition
 	Currency string `yaml:"currency"`
-	TickSize SerializableDecimal `yaml:"tickSize"`
-	TickValue SerializableDecimal `yaml:"tickValue"`
-	Margin SerializableDecimal `yaml:"margin"`
-	BrokerFee SerializableDecimal `yaml:"brokerFee"`
-	ExchangeFee SerializableDecimal `yaml:"exchangeFee"`
+	TickSize float64 `yaml:"tickSize"`
+	TickValue float64 `yaml:"tickValue"`
+	Margin float64 `yaml:"margin"`
+	BrokerFee float64 `yaml:"brokerFee"`
+	ExchangeFee float64 `yaml:"exchangeFee"`
 	Spread int `yaml:"spread"`
 }
 

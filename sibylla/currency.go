@@ -5,8 +5,6 @@ import (
 	"log"
 	"path/filepath"
 	"time"
-
-	"github.com/shopspring/decimal"
 )
 
 const currencyUSD = "USD"
@@ -15,7 +13,7 @@ const currencyJPY = "JPY"
 
 type currencyMap struct {
 	symbol string
-	records map[time.Time]decimal.Decimal
+	records map[time.Time]float64
 }
 
 var currencies *[]currencyMap
@@ -37,11 +35,11 @@ func loadCurrency(symbol string) currencyMap {
 	filename := fmt.Sprintf("^%s%s.H1.csv", symbol, currencyUSD)
 	path := filepath.Join(configuration.BarchartPath, filename)
 	columns := []string{"time", "close"}
-	records := map[time.Time]decimal.Decimal{}
+	records := map[time.Time]float64{}
 	callback := func(values []string) {
 		timestamp := getTime(values[0])
-		close := getDecimal(values[1], path)
-		records[timestamp] = close.Decimal
+		close := parseFloat(values[1])
+		records[timestamp] = close
 	}
 	readCsv(path, columns, callback)
 	currencyMap := currencyMap{
@@ -52,7 +50,7 @@ func loadCurrency(symbol string) currencyMap {
 }
 
 // Warning: this function currently ignores timezones and spreads
-func convertCurrency(timestamp time.Time, amount decimal.Decimal, symbol string) decimal.Decimal {
+func convertCurrency(timestamp time.Time, amount float64, symbol string) float64 {
 	if symbol == currencyUSD {
 		return amount
 	}
@@ -61,7 +59,7 @@ func convertCurrency(timestamp time.Time, amount decimal.Decimal, symbol string)
 			for i := 0; i < 5; i++ {
 				close, exists := currencyMap.records[timestamp]
 				if exists {
-					converted := close.Mul(amount)
+					converted := close * amount
 					return converted
 				}
 				timestamp = timestamp.Add(- time.Hour)
@@ -70,5 +68,5 @@ func convertCurrency(timestamp time.Time, amount decimal.Decimal, symbol string)
 		}
 	}
 	log.Fatalf("Failed to find currency %s", symbol)
-	return decimal.Decimal{}
+	return 0.0
 }

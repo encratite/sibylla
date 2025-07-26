@@ -25,7 +25,6 @@ require (
 	github.com/mattn/go-runewidth v0.0.4 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/segmentio/fasthash v1.0.3 // indirect
-	github.com/shopspring/decimal v1.4.0 // indirect
 	golang.org/x/exp v0.0.0-20220218215828-6cf2b201936e // indirect
 	golang.org/x/image v0.25.0 // indirect
 	golang.org/x/sys v0.30.0 // indirect
