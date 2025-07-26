@@ -33,8 +33,10 @@ function renderDataMiningUI() {
 			const getRiskAdjusted = property => {
 				return [property.toFixed(3), true];
 			};
+			const strategyName = `${asset.symbol} #${index + 1}`;
 			const equityCurve = createElement("img", null, {
-				src: strategy.plot
+				src: strategy.plot,
+				onclick: () => showEquityCurve(strategyName, strategy),
 			});
 			const featuresList = createElement("ul");
 			strategy.features.forEach(feature => {
@@ -43,7 +45,7 @@ function renderDataMiningUI() {
 				featuresList.append(element);
 			});
 			const cells = [
-				[`${asset.symbol} #${index + 1}`, false],
+				[strategyName, false],
 				[featuresList, false],
 				[side, false],
 				[strategy.exit, false],
@@ -68,6 +70,26 @@ function renderDataMiningUI() {
 				}
 			});
 		});
+	});
+}
+
+function showEquityCurve(strategyName, strategy) {
+	const padding = 35;
+	const width = 1152 + padding;
+	const height = 768 + padding;
+	const left = 100;
+	const top = 100;
+	const equityCurve = window.open("", "_blank", `width=${width},height=${height},left=${left},top=${top},resizable=yes`);
+	equityCurve.document.write(`
+		<!doctype html>
+			<head>
+				<title>${strategyName}</title>
+			</head>
+		</html>
+	`);
+	equityCurve.document.close();
+	const image = createElement("img", equityCurve.document.body, {
+		src: strategy.plot
 	});
 }
 
