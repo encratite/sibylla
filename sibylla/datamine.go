@@ -8,6 +8,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/cheggaaa/pb"
 	"github.com/shopspring/decimal"
 	"gonum.org/v1/gonum/stat"
 	"gopkg.in/yaml.v3"
@@ -118,10 +119,13 @@ func DataMine(yamlPath string) {
 	fmt.Printf("Loaded archives in %.2f s\n", delta.Seconds())
 	start = time.Now()
 	tasks := getDataMiningTasks(assetRecords, miningConfig)
-	fmt.Printf("Data mining with %d tasks\n", len(tasks))
+	fmt.Println("Data mining strategies")
+	bar := pb.StartNew(len(tasks))
+	bar.Start()
 	taskResults := parallelMap(tasks, func (task dataMiningTask) []dataMiningResult {
-		return executeDataMiningTask(task, miningConfig)
+		return executeDataMiningTask(task, bar, miningConfig)
 	})
+	bar.Finish()
 	delta = time.Since(start)
 	fmt.Printf("Finished data mining in %.2f s\n", delta.Seconds())
 	processResults(taskResults, assetRecords, miningConfig)
@@ -265,7 +269,7 @@ func newDataMiningThreshold(asset assetRecords, feature featureAccessor, minMax 
 	}
 }
 
-func executeDataMiningTask(task dataMiningTask, miningConfig DataMiningConfiguration) []dataMiningResult {
+func executeDataMiningTask(task dataMiningTask, bar *pb.ProgressBar, miningConfig DataMiningConfiguration) []dataMiningResult {
 	threshold1 := &task[0]
 	threshold2 := &task[1]
 	returnsAccessors := getReturnsAccessors()
@@ -340,6 +344,7 @@ func executeDataMiningTask(task dataMiningTask, miningConfig DataMiningConfigura
 		result.riskAdjusted = riskAdjusted
 		result.tradesRatio = getTradesRatio(result.equityCurve, miningConfig)
 	}
+	bar.Increment()
 	return results
 }
 
