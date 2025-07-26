@@ -19,6 +19,7 @@ type Configuration struct {
 	WebPath string `yaml:"webPath"`
 	TempPath string `yaml:"tempPath"`
 	IconPath string `yaml:"iconPath"`
+	ProfilerAddress *string `yaml:"profilerAddress"`
 }
 
 const configurationPath = "configuration/configuration.yaml"

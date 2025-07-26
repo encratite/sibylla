@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"log"
+	_ "net/http/pprof"
+	"net/http"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -203,5 +205,16 @@ func compareFloat64(a, b float64) int {
 		return 1
 	} else {
 		return 0
+	}
+}
+
+func launchProfiler() {
+	if configuration.ProfilerAddress != nil {
+		go func() {
+			err := http.ListenAndServe(*configuration.ProfilerAddress, nil)
+			if err != nil {
+				log.Fatal(err)
+			}
+		}()
 	}
 }

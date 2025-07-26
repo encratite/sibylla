@@ -5,6 +5,7 @@ import (
 	"log"
 	"math"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"time"
 
@@ -110,6 +111,13 @@ func DataMine(yamlPath string) {
 	loadConfiguration()
 	loadCurrencies()
 	miningConfig := loadDataMiningConfiguration(yamlPath)
+	launchProfiler()
+	model := executeDataMiningConfig(miningConfig)
+	runtime.GC()
+	runBrowser("Data Mining", dataMiningScript, model)
+}
+
+func executeDataMiningConfig(miningConfig DataMiningConfiguration) DataMiningModel {
 	assetPaths := getAssetPaths(miningConfig)
 	start := time.Now()
 	assetRecords := parallelMap(assetPaths, func (path assetPath) assetRecords {
@@ -128,7 +136,8 @@ func DataMine(yamlPath string) {
 	bar.Finish()
 	delta = time.Since(start)
 	fmt.Printf("Finished data mining in %.2f s\n", delta.Seconds())
-	processResults(taskResults, assetRecords, miningConfig)
+	model := processResults(taskResults, assetRecords, miningConfig)
+	return model
 }
 
 func getAssetPaths(miningConfig DataMiningConfiguration) []assetPath {
@@ -225,7 +234,7 @@ func processResults(
 	taskResults [][]dataMiningResult,
 	assetRecords []assetRecords,
 	miningConfig DataMiningConfiguration,
-) {
+) DataMiningModel {
 	start := time.Now()
 	assetResults := map[string][]dataMiningResult{}
 	for _, results := range taskResults {
@@ -256,8 +265,7 @@ func processResults(
 	model := getDataMiningModel(assetResults, dailyRecords, miningConfig)
 	delta := time.Since(start)
 	fmt.Printf("Finished post-processing results in %.2f s\n", delta.Seconds())
-	title := "Data Mining"
-	runBrowser(title, dataMiningScript, model)
+	return model
 }
 
 func newDataMiningThreshold(asset assetRecords, feature featureAccessor, minMax []float64) featureThreshold {
