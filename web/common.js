@@ -10,8 +10,12 @@ function createElement(tagName, container, properties) {
 		container.appendChild(element);
 	}
 	if (properties != null) {
-		for (const key in properties) {
-			element[key] = properties[key];
+		if (typeof properties === "string") {
+			element.className = properties;
+		} else {
+			for (const key in properties) {
+				element[key] = properties[key];
+			}
 		}
 	}
 	return element;
@@ -20,4 +24,14 @@ function createElement(tagName, container, properties) {
 function getPercentage(value) {
 	const percentage = (value * 100).toFixed(2);
 	return `${percentage}%`;
+}
+
+function formatMoney(amount) {
+	const options = {
+		style: "currency",
+		currency: "USD",
+	};
+	const format = new Intl.NumberFormat("en-US", options);
+	const output = format.format(amount);
+	return output;
 }

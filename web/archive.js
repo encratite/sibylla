@@ -1,18 +1,12 @@
 function renderArchiveUI() {
 	const model = getModel();
-	const topLevel = createElement("div", document.body, {
-		className: "container"
-	});
-	const dailyRecords = createElement("div", topLevel, {
-		className: "dailyRecords"
-	});
+	const topLevel = createElement("div", document.body, "container");
+	const dailyRecords = createElement("div", topLevel, "dailyRecords");
 	createElement("img", dailyRecords, {
 		src: model.plot
 	});
 	model.properties.forEach(property => {
-		const container = createElement("div", topLevel, {
-			className: "property"
-		});
+		const container = createElement("div", topLevel, "property");
 		const addMissingValueStyle = valueCell => {
 			if (property.nilRatio >= 0.1) {
 				valueCell.style.color = "#ff0000";

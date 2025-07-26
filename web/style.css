@@ -5,34 +5,65 @@
 .container {
 	margin: auto;
 	width: 1200px;
+}
 
-	.dailyRecords {
-		margin-bottom: 40px;
+.dailyRecords {
+	margin-bottom: 40px;
+}
+
+.property {
+	margin-bottom: 40px;
+	padding: 8px 16px 8px 16px;
+	border: 1px solid black;
+	display: flex;
+	flex-direction: row;
+	align-items: flex-start;
+
+	table {
+		width: 280px;
+		margin-right: 65px;
+
+		td {
+			line-height: 1.25;
+		}
+
+		td:nth-child(1) {
+			font-weight: bold;
+		}
+
+		td:nth-child(2) {
+			text-align: right;
+		}
+	}
+}
+
+.assets {
+	border-collapse: collapse;
+	border-spacing: 0;
+	width: 100%;
+
+	th {
+		text-align: left;
 	}
 
-	.property {
-		margin-bottom: 40px;
-		padding: 8px 16px 8px 16px;
+	th, td {
+		vertical-align: top;
 		border: 1px solid black;
-		display: flex;
-		flex-direction: row;
-		align-items: flex-start;
+	}
 
-		table {
-			width: 280px;
-			margin-right: 65px;
+	td.numeric {
+		text-align: right;
+	}
 
-			td {
-				line-height: 1.25;
-			}
+	img {
+		width: 240px;
+	}
 
-			td:nth-child(1) {
-				font-weight: bold;
-			}
+	td:last-child {
+		text-align: center;
+	}
 
-			td:nth-child(2) {
-				text-align: right;
-			}
-		}
+	.short {
+		color: red;
 	}
 }

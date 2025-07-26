@@ -19,6 +19,7 @@ const tradingDaysPerYear = 252
 
 type DataMiningConfiguration struct {
 	Assets []string `yaml:"assets"`
+	FeaturesOnly []string `yaml:"featuresOnly"`
 	StrategyLimit int `yaml:"strategyLimit"`
 	DateMin *SerializableDate `yaml:"dateMin"`
 	DateMax *SerializableDate `yaml:"dateMax"`
@@ -82,12 +83,13 @@ type DataMiningModel struct {
 }
 
 type AssetMiningResults struct {
-	Symbol string `json:"symbols"`
+	Symbol string `json:"symbol"`
 	Plot string `json:"plot"`
 	Strategies []StrategyMiningResult `json:"strategies"`
 }
 
 type StrategyMiningResult struct {
+	Side int `json:"side"`
 	Features []StrategyFeature `json:"features"`
 	Exit string `json:"exit"`
 	Returns float64 `json:"returns"`
@@ -97,6 +99,7 @@ type StrategyMiningResult struct {
 }
 
 type StrategyFeature struct {
+	Symbol string `json:"symbol"`
 	Name string `json:"name"`
 	Min float64 `json:"min"`
 	Max float64 `json:"max"`
@@ -106,6 +109,25 @@ func DataMine(yamlPath string) {
 	loadConfiguration()
 	loadCurrencies()
 	miningConfig := loadDataMiningConfiguration(yamlPath)
+	assetPaths := getAssetPaths(miningConfig)
+	start := time.Now()
+	assetRecords := parallelMap(assetPaths, func (path assetPath) assetRecords {
+		return getAssetRecords(path, miningConfig)
+	})
+	delta := time.Since(start)
+	fmt.Printf("Loaded archives in %.2f s\n", delta.Seconds())
+	start = time.Now()
+	tasks := getDataMiningTasks(assetRecords, miningConfig)
+	fmt.Printf("Data mining with %d tasks\n", len(tasks))
+	taskResults := parallelMap(tasks, func (task dataMiningTask) []dataMiningResult {
+		return executeDataMiningTask(task, miningConfig)
+	})
+	delta = time.Since(start)
+	fmt.Printf("Finished data mining in %.2f s\n", delta.Seconds())
+	processResults(taskResults, assetRecords, miningConfig)
+}
+
+func getAssetPaths(miningConfig DataMiningConfiguration) []assetPath {
 	assetPaths := []assetPath{}
 	for _, asset := range *assets {
 		if len(miningConfig.Assets) > 0 && !contains(miningConfig.Assets, asset.Symbol) {
@@ -124,57 +146,83 @@ func DataMine(yamlPath string) {
 			assetPaths = append(assetPaths, assetPath)
 		}
 	}
-	start := time.Now()
-	assetRecords := parallelMap(assetPaths, func (assetPath assetPath) assetRecords {
-		archive := readArchive(assetPath.path)
-		dailyRecords := []DailyRecord{}
-		intradayRecords := []FeatureRecord{}
-		recordsMap := map[time.Time]*FeatureRecord{}
-		for _, record := range archive.DailyRecords {
-			isValid, breakLoop := miningConfig.isValidDate(record.Date)
-			if !isValid {
-				if breakLoop {
-					break
-				} else {
-					continue
-				}
-			}
-			dailyRecords = append(dailyRecords, record)
-		}
-		for _, record := range archive.IntradayRecords {
-			isValid, breakLoop := miningConfig.isValidDate(record.Timestamp)
-			if !isValid {
-				if breakLoop {
-					break
-				} else {
-					continue
-				}
-			}
-			isValid = miningConfig.isValidTime(record.Timestamp)
-			if !isValid {
+	return assetPaths
+}
+
+func getAssetRecords(assetPath assetPath, miningConfig DataMiningConfiguration) assetRecords {
+	archive := readArchive(assetPath.path)
+	dailyRecords := []DailyRecord{}
+	intradayRecords := []FeatureRecord{}
+	recordsMap := map[time.Time]*FeatureRecord{}
+	for _, record := range archive.DailyRecords {
+		isValid, breakLoop := miningConfig.isValidDate(record.Date)
+		if !isValid {
+			if breakLoop {
+				break
+			} else {
 				continue
 			}
-			intradayRecords = append(intradayRecords, record)
-			recordsMap[record.Timestamp] = &record
 		}
-		return assetRecords{
-			asset: assetPath.asset,
-			dailyRecords: dailyRecords,
-			intradayRecords: intradayRecords,
-			recordsMap: recordsMap,
+		dailyRecords = append(dailyRecords, record)
+	}
+	for _, record := range archive.IntradayRecords {
+		isValid, breakLoop := miningConfig.isValidDate(record.Timestamp)
+		if !isValid {
+			if breakLoop {
+				break
+			} else {
+				continue
+			}
 		}
-	})
-	delta := time.Since(start)
-	fmt.Printf("Loaded archives in %.2f s\n", delta.Seconds())
-	start = time.Now()
-	tasks := getDataMiningTasks(assetRecords, miningConfig)
-	fmt.Printf("Data mining with %d tasks\n", len(tasks))
-	taskResults := parallelMap(tasks, func (task dataMiningTask) []dataMiningResult {
-		return executeDataMiningTask(task, miningConfig)
-	})
-	delta = time.Since(start)
-	fmt.Printf("Finished data mining in %.2f s\n", delta.Seconds())
-	start = time.Now()
+		isValid = miningConfig.isValidTime(record.Timestamp)
+		if !isValid {
+			continue
+		}
+		intradayRecords = append(intradayRecords, record)
+		recordsMap[record.Timestamp] = &record
+	}
+	return assetRecords{
+		asset: assetPath.asset,
+		dailyRecords: dailyRecords,
+		intradayRecords: intradayRecords,
+		recordsMap: recordsMap,
+	}
+}
+
+func getDataMiningTasks(assetRecords []assetRecords, miningConfig DataMiningConfiguration) []dataMiningTask {
+	accessors := getFeatureAccessors()
+	tasks := []dataMiningTask{}
+	for i, asset1 := range assetRecords {
+		if asset1.asset.FeaturesOnly || slices.Contains(miningConfig.FeaturesOnly, asset1.asset.Symbol) {
+			continue
+		}
+		for j, asset2 := range assetRecords {
+			for k, feature1 := range accessors {
+				for l, feature2 := range accessors {
+					if i == j && k == l {
+						continue
+					}
+					for _, minMax1 := range miningConfig.Thresholds {
+						for _, minMax2 := range miningConfig.Thresholds {
+							threshold1 := newDataMiningThreshold(asset1, feature1, minMax1)
+							threshold2 := newDataMiningThreshold(asset2, feature2, minMax2)
+							task := dataMiningTask{threshold1, threshold2}
+							tasks = append(tasks, task)
+						}
+					}
+				}
+			}
+		}
+	}
+	return tasks
+}
+
+func processResults(
+	taskResults [][]dataMiningResult,
+	assetRecords []assetRecords,
+	miningConfig DataMiningConfiguration,
+) {
+	start := time.Now()
 	assetResults := map[string][]dataMiningResult{}
 	for _, results := range taskResults {
 		for _, result := range results {
@@ -202,38 +250,10 @@ func DataMine(yamlPath string) {
 	}
 	clearDirectory(configuration.TempPath)
 	model := getDataMiningModel(assetResults, dailyRecords, miningConfig)
-	delta = time.Since(start)
+	delta := time.Since(start)
 	fmt.Printf("Finished post-processing results in %.2f s\n", delta.Seconds())
 	title := "Data Mining"
 	runBrowser(title, dataMiningScript, model)
-}
-
-func getDataMiningTasks(assetRecords []assetRecords, miningConfig DataMiningConfiguration) []dataMiningTask {
-	accessors := getFeatureAccessors()
-	tasks := []dataMiningTask{}
-	for i, asset1 := range assetRecords {
-		if asset1.asset.FeaturesOnly {
-			continue
-		}
-		for j, asset2 := range assetRecords {
-			for k, feature1 := range accessors {
-				for l, feature2 := range accessors {
-					if i == j && k == l {
-						continue
-					}
-					for _, minMax1 := range miningConfig.Thresholds {
-						for _, minMax2 := range miningConfig.Thresholds {
-							threshold1 := newDataMiningThreshold(asset1, feature1, minMax1)
-							threshold2 := newDataMiningThreshold(asset2, feature2, minMax2)
-							task := dataMiningTask{threshold1, threshold2}
-							tasks = append(tasks, task)
-						}
-					}
-				}
-			}
-		}
-	}
-	return tasks
 }
 
 func newDataMiningThreshold(asset assetRecords, feature featureAccessor, minMax []float64) featureThreshold {
@@ -429,7 +449,7 @@ func getDataMiningModel(
 		plotDailyRecords(plotRecords, dailyRecordsPlotPath)
 		assetMiningResults := AssetMiningResults{
 			Symbol: symbol,
-			Plot: dailyRecordsPlotPath,
+			Plot: getFileURL(dailyRecordsPlotPath),
 			Strategies: []StrategyMiningResult{},
 		}
 		for i, result := range results {
@@ -437,6 +457,11 @@ func getDataMiningModel(
 			assetMiningResults.Strategies = append(assetMiningResults.Strategies, miningResult)
 		}
 		return assetMiningResults
+	})
+	slices.SortFunc(model.Results, func (a, b AssetMiningResults) int {
+		index1 := slices.Index(miningConfig.Assets, a.Symbol)
+		index2 := slices.Index(miningConfig.Assets, b.Symbol)
+		return index1 - index2
 	})
 	return model
 }
@@ -480,15 +505,17 @@ func getStrategyMiningResult(
 	dailyRecordsPlotPath := filepath.Join(configuration.TempPath, fileName)
 	plotEquityCurve(equityCurve, dailyRecordsPlotPath)
 	output := StrategyMiningResult{
+		Side: int(result.side),
 		Features: []StrategyFeature{},
 		Exit: result.returns.name,
 		Returns: returns,
 		RiskAdjusted: result.riskAdjusted,
 		TradesRatio: result.tradesRatio,
-		Plot: dailyRecordsPlotPath,
+		Plot: getFileURL(dailyRecordsPlotPath),
 	}
 	for _, threshold := range result.task {
 		feature := StrategyFeature{
+			Symbol: threshold.asset.asset.Symbol,
 			Name: threshold.feature.name,
 			Min: threshold.min,
 			Max: threshold.max,
