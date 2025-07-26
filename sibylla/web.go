@@ -22,8 +22,8 @@ const scriptPathPlaceholder = "SCRIPT_PATH"
 func runBrowser(title, script string, model any) {
 	windowOptions := webview2.WindowOptions{
 		Title: title,
-		Width: 1280,
-		Height: 960,
+		Width: 1440,
+		Height: 1080,
 		Center: true,
 	}
 	options := webview2.WebViewOptions{

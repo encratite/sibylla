@@ -3,25 +3,26 @@ function renderDataMiningUI() {
 	const topLevel = createElement("div", document.body, {
 		className: "container"
 	});
-	const table = createElement("table", topLevel, "assets");
-	const headers = [
-		"Asset",
-		"Side",
-		"Feature 1",
-		"Feature 2",
-		"Exit",
-		"Returns",
-		"Risk-Adjusted",
-		"Days Traded",
-		"Equity Curve"
-	];
-	const headerRow = createElement("tr", table);
-	headers.forEach(name => {
-		const cell = createElement("th", headerRow);
-		cell.textContent = name;
-	});
 	model.results.forEach(asset => {
-		asset.strategies.forEach(strategy => {
+		const table = createElement("table", topLevel, "assets");
+		const headers = [
+			"Strategy",
+			"Features",
+			"Side",
+			"Exit",
+			"Returns",
+			"RAR",
+			"MinRAR",
+			"RecRAR",
+			"Days Traded",
+			"Equity Curve"
+		];
+		const headerRow = createElement("tr", table);
+		headers.forEach(name => {
+			const cell = createElement("th", headerRow);
+			cell.textContent = name;
+		});
+		asset.strategies.forEach((strategy, index) => {
 			const row = createElement("tr", table);
 			const isLong = strategy.side === 0;
 			const side = createElement("span");
@@ -29,21 +30,27 @@ function renderDataMiningUI() {
 			if (isLong === false) {
 				side.className = "short";
 			}
-			const getFeatureContent = index => {
-				const feature = strategy.features[index];
-				return `${feature.symbol}.${feature.name} (${feature.min} - ${feature.max})`;
+			const getRiskAdjusted = property => {
+				return [property.toFixed(3), true];
 			};
 			const equityCurve = createElement("img", null, {
 				src: strategy.plot
 			});
+			const featuresList = createElement("ul");
+			strategy.features.forEach(feature => {
+				const element = createElement("li", featuresList);
+				element.textContent = `${feature.symbol}.${feature.name} (${feature.min}, ${feature.max})`
+				featuresList.append(element);
+			});
 			const cells = [
-				[asset.symbol, false],
+				[`${asset.symbol} #${index + 1}`, false],
+				[featuresList, false],
 				[side, false],
-				[getFeatureContent(0), false],
-				[getFeatureContent(1), false],
 				[strategy.exit, false],
 				[formatMoney(strategy.returns), true],
-				[strategy.riskAdjusted.toFixed(3), true],
+				getRiskAdjusted(strategy.riskAdjusted),
+				getRiskAdjusted(strategy.riskAdjustedMin),
+				getRiskAdjusted(strategy.riskAdjustedRecent),
 				[getPercentage(strategy.tradesRatio), true],
 				[equityCurve, false],
 			];

@@ -4,7 +4,7 @@
 
 .container {
 	margin: auto;
-	width: 1200px;
+	width: 1360px;
 }
 
 .dailyRecords {
@@ -41,6 +41,7 @@
 	border-collapse: collapse;
 	border-spacing: 0;
 	width: 100%;
+	margin-bottom: 40px;
 
 	th {
 		text-align: left;
@@ -49,6 +50,8 @@
 	th, td {
 		vertical-align: top;
 		border: 1px solid black;
+		padding-left: 4px;
+		padding-right: 4px;
 	}
 
 	td.numeric {
@@ -57,6 +60,7 @@
 
 	img {
 		width: 240px;
+		cursor: pointer;
 	}
 
 	td:last-child {
@@ -65,5 +69,14 @@
 
 	.short {
 		color: red;
+	}
+
+	ul, li {
+		margin: 0;
+		padding: 0;
+	}
+
+	li {
+		list-style: none;
 	}
 }

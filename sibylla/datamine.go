@@ -17,6 +17,7 @@ import (
 const dataMiningScript = "datamine.js"
 const hoursPerYear = 365.25 * 24
 const tradingDaysPerYear = 252
+const riskAdjustedSegments = 3
 
 type DataMiningConfiguration struct {
 	Assets []string `yaml:"assets"`
@@ -65,6 +66,8 @@ type dataMiningResult struct {
 	side positionSide
 	equityCurve []equityCurveSample
 	riskAdjusted float64
+	riskAdjustedMin float64
+	riskAdjustedRecent float64
 	tradesRatio float64
 }
 
@@ -95,6 +98,8 @@ type StrategyMiningResult struct {
 	Exit string `json:"exit"`
 	Returns float64 `json:"returns"`
 	RiskAdjusted float64 `json:"riskAdjusted"`
+	RiskAdjustedMin float64 `json:"riskAdjustedMin"`
+	RiskAdjustedRecent float64 `json:"riskAdjustedRecent"`
 	TradesRatio float64 `json:"tradesRatio"`
 	Plot string `json:"plot"`
 }
@@ -247,7 +252,7 @@ func processResults(
 	}
 	for symbol := range assetResults {
 		slices.SortFunc(assetResults[symbol], func (a, b dataMiningResult) int {
-			return compareFloat64(b.riskAdjusted, a.riskAdjusted)
+			return compareFloat64(b.riskAdjustedMin, a.riskAdjustedMin)
 		})
 		results := assetResults[symbol]
 		if len(results) > miningConfig.StrategyLimit {
@@ -342,17 +347,36 @@ func executeDataMiningTask(task dataMiningTask, bar *pb.ProgressBar, miningConfi
 	for i := range results {
 		result := &results[i]
 		returnsSamples := allReturnsSamples[i]
-		mean := stat.Mean(returnsSamples, nil)
-		stdDev := stat.StdDev(returnsSamples, nil)
-		if result.side == SideShort {
-			mean = - mean
+		segmentSize := len(returnsSamples) / riskAdjustedSegments
+		segments := []float64{}
+		for j := 0; j < riskAdjustedSegments; j++ {
+			jNext := j + 1
+			offset := j * segmentSize
+			end := jNext * segmentSize
+			if jNext == riskAdjustedSegments {
+				end = len(returnsSamples)
+			}
+			samples := returnsSamples[offset:end]
+			riskAdjusted := getRiskAdjusted(samples, result.side)
+			segments = append(segments, riskAdjusted)
 		}
-		riskAdjusted := mean / stdDev
-		result.riskAdjusted = riskAdjusted
+		result.riskAdjusted = getRiskAdjusted(returnsSamples, result.side)
+		result.riskAdjustedMin = slices.Min(segments)
+		result.riskAdjustedRecent = segments[len(segments) - 1]
 		result.tradesRatio = getTradesRatio(result.equityCurve, miningConfig)
 	}
 	bar.Increment()
 	return results
+}
+
+func getRiskAdjusted(returnsSamples []float64, side positionSide) float64 {
+	mean := stat.Mean(returnsSamples, nil)
+	stdDev := stat.StdDev(returnsSamples, nil)
+	if side == SideShort {
+		mean = - mean
+	}
+	riskAdjusted := mean / stdDev
+	return riskAdjusted
 }
 
 func getAssetReturns(side positionSide, timestamp time.Time, ticks int, asset *Asset) float64 {
@@ -521,6 +545,8 @@ func getStrategyMiningResult(
 		Exit: result.returns.name,
 		Returns: returns,
 		RiskAdjusted: result.riskAdjusted,
+		RiskAdjustedMin: result.riskAdjustedMin,
+		RiskAdjustedRecent: result.riskAdjustedRecent,
 		TradesRatio: result.tradesRatio,
 		Plot: getFileURL(dailyRecordsPlotPath),
 	}
