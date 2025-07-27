@@ -9,6 +9,7 @@ function renderDataMiningUI() {
 			"Strategy",
 			"Features",
 			"Side",
+			"Time",
 			"Exit",
 			"Returns",
 			"RAR",
@@ -44,10 +45,12 @@ function renderDataMiningUI() {
 				element.textContent = `${feature.symbol}.${feature.name} (${feature.min}, ${feature.max})`
 				featuresList.append(element);
 			});
+			const timeOfDay = strategy.timeOfDay != null ? strategy.timeOfDay : "-";
 			const cells = [
 				[strategyName, false],
 				[featuresList, false],
 				[side, false],
+				[timeOfDay, false],
 				[strategy.exit, false],
 				[formatMoney(strategy.returns), true],
 				getRiskAdjusted(strategy.riskAdjusted),

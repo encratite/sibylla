@@ -65,6 +65,7 @@ type dataMiningResult struct {
 	task dataMiningTask
 	returns returnsAccessor
 	side positionSide
+	timeOfDay *time.Duration
 	equityCurve []equityCurveSample
 	riskAdjusted float64
 	riskAdjustedMin float64
@@ -95,6 +96,7 @@ type AssetMiningResults struct {
 
 type StrategyMiningResult struct {
 	Side int `json:"side"`
+	TimeOfDay *string `json:"timeOfDay"`
 	Features []StrategyFeature `json:"features"`
 	Exit string `json:"exit"`
 	Returns float64 `json:"returns"`
@@ -294,14 +296,19 @@ func executeDataMiningTask(task dataMiningTask, bar *pb.ProgressBar, miningConfi
 	}
 	for _, returns := range returnsAccessors {
 		for _, side := range sides {
-			result := dataMiningResult{
-				task: task,
-				returns: returns,
-				side: side,
-				equityCurve: []equityCurveSample{},
+			for timeOfDay := miningConfig.TimeMin.Duration;
+				timeOfDay <= miningConfig.TimeMax.Duration;
+				timeOfDay += time.Duration(1) * time.Hour {
+				result := dataMiningResult{
+					task: task,
+					returns: returns,
+					side: side,
+					timeOfDay: &timeOfDay,
+					equityCurve: []equityCurveSample{},
+				}
+				results = append(results, result)
+				allReturnsSamples = append(allReturnsSamples, []float64{})
 			}
-			results = append(results, result)
-			allReturnsSamples = append(allReturnsSamples, []float64{})
 		}
 	}
 	for i := range threshold1.asset.intradayRecords {
@@ -316,6 +323,12 @@ func executeDataMiningTask(task dataMiningTask, bar *pb.ProgressBar, miningConfi
 		asset := &threshold1.asset.asset
 		for i := range results {
 			result := &results[i]
+			if result.timeOfDay != nil {
+				timeOfDay := getTimeOfDay(record1.Timestamp)
+				if timeOfDay != *result.timeOfDay {
+					continue
+				}
+			}
 			returnsSamples := &allReturnsSamples[i]
 			returnsRecord := result.returns.get(record1)
 			if returnsRecord == nil {
@@ -437,6 +450,9 @@ func (c *DataMiningConfiguration) sanityCheck() {
 		format := "Invalid timeMin/timeMax values in data mining configuration: %s vs. %s"
 		log.Fatalf(format, *c.TimeMin, *c.TimeMax)
 	}
+	if c.TimeMin == nil || c.TimeMax == nil {
+		log.Fatalf("Data mining without timeMin/timeMax constraints is no longer supported")
+	}
 }
 
 func (c *DataMiningConfiguration) isValidDate(timestamp time.Time) (bool, bool) {
@@ -550,6 +566,7 @@ func getStrategyMiningResult(
 	plotEquityCurve(equityCurve, dailyRecordsPlotPath)
 	output := StrategyMiningResult{
 		Side: int(result.side),
+		TimeOfDay: nil,
 		Features: []StrategyFeature{},
 		Exit: result.returns.name,
 		Returns: returns,
@@ -558,6 +575,10 @@ func getStrategyMiningResult(
 		RiskAdjustedRecent: result.riskAdjustedRecent,
 		TradesRatio: result.tradesRatio,
 		Plot: getFileURL(dailyRecordsPlotPath),
+	}
+	if result.timeOfDay != nil {
+		timeOfDayString := getTimeOfDayString(*result.timeOfDay)
+		output.TimeOfDay = &timeOfDayString
 	}
 	for _, threshold := range result.task {
 		feature := StrategyFeature{

@@ -68,6 +68,19 @@ func getDateFromTime(timestamp time.Time) time.Time {
 	return date
 }
 
+func getTimeOfDay(timestamp time.Time) time.Duration {
+	duration := time.Duration(timestamp.Hour()) * time.Hour + time.Duration(timestamp.Minute()) * time.Minute
+	return duration
+}
+
+func getTimeOfDayString(timeOfDay time.Duration) string {
+	const minutesPerHour = 60
+	hours := int(timeOfDay.Hours())
+	minutes := int(timeOfDay.Minutes()) % minutesPerHour
+	output := fmt.Sprintf("%02d:%02d", hours, minutes)
+	return output
+}
+
 func parallelForEach[T any](elements []T, callback func(T)) {
 	workers := runtime.NumCPU()
 	elementChan := make(chan T, len(elements))
