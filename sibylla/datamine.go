@@ -32,6 +32,7 @@ type DataMiningConfiguration struct {
 	TimeMin *SerializableDuration `yaml:"timeMin"`
 	TimeMax *SerializableDuration `yaml:"timeMax"`
 	Weekdays []SerializableWeekday `yaml:"weekdays"`
+	TradesMin int `yaml:"tradesMin"`
 	TradesRatio float64 `yaml:"tradesRatio"`
 	Thresholds [][]float64 `yaml:"thresholds"`
 }
@@ -261,8 +262,10 @@ func processResults(
 	assetResults := map[string][]dataMiningResult{}
 	for _, results := range taskResults {
 		for _, result := range results {
-			key := result.task[0].asset.asset.Symbol
-			assetResults[key] = append(assetResults[key], result)
+			if result.enabled {
+				key := result.task[0].asset.asset.Symbol
+				assetResults[key] = append(assetResults[key], result)
+			}
 		}
 	}
 	for symbol := range assetResults {
@@ -402,22 +405,20 @@ func executeDataMiningTask(task dataMiningTask, bar *pb.ProgressBar, miningConfi
 					badPerformance = false
 				}
 				if drawdownExceeded || (enoughSamples && badPerformance) {
-					result.enabled = false
-					result.equityCurve = nil
-					result.returnsSamples = nil
+					result.disable()
 				}
 			}
 		}
 	}
-	filteredResults := []dataMiningResult{}
-	for _, result := range results {
-		if result.enabled && len(result.equityCurve) > 0 {
-			filteredResults = append(filteredResults, result)
-		}
-	}
-	results = filteredResults
 	for i := range results {
 		result := &results[i]
+		if len(result.equityCurve) < miningConfig.TradesMin {
+			result.disable()
+			continue
+		}
+		if !result.enabled {
+			continue
+		}
 		segmentSize := len(result.returnsSamples) / riskAdjustedSegments
 		segments := []float64{}
 		for j := range riskAdjustedSegments {
@@ -436,15 +437,12 @@ func executeDataMiningTask(task dataMiningTask, bar *pb.ProgressBar, miningConfi
 		result.riskAdjustedRecent = segments[len(segments) - 1]
 		result.tradesRatio = getTradesRatio(result.equityCurve, threshold1.asset.intradayRecords, miningConfig)
 		result.returnsSamples = nil
-	}
-	finalResults := []dataMiningResult{}
-	for _, result := range results {
-		if result.tradesRatio > miningConfig.TradesRatio {
-			finalResults = append(finalResults, result)
+		if result.tradesRatio < miningConfig.TradesRatio {
+			result.disable()
 		}
 	}
 	bar.Increment()
-	return finalResults
+	return results
 }
 
 func getRiskAdjusted(returnsSamples []float64) float64 {
@@ -683,4 +681,10 @@ func getTradesRatio(
 	years := duration.Hours() / hoursPerYear
 	tradesRatio := float64(daysTraded) / (tradingDaysPerYear * years)
 	return tradesRatio
+}
+
+func (d *dataMiningResult) disable() {
+	d.enabled = false
+	d.equityCurve = nil
+	d.returnsSamples = nil
 }
