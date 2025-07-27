@@ -82,6 +82,7 @@ type dataMiningResult struct {
 	tradesRatio float64
 	cumulativeReturn float64
 	cumulativeMax float64
+	drawdownMax float64
 	enabled bool
 }
 
@@ -115,6 +116,7 @@ type StrategyMiningResult struct {
 	RiskAdjusted float64 `json:"riskAdjusted"`
 	RiskAdjustedMin float64 `json:"riskAdjustedMin"`
 	RiskAdjustedRecent float64 `json:"riskAdjustedRecent"`
+	MaxDrawdown float64 `json:"maxDrawdown"`
 	TradesRatio float64 `json:"tradesRatio"`
 	Plot string `json:"plot"`
 }
@@ -259,9 +261,6 @@ func processResults(
 	assetResults := map[string][]dataMiningResult{}
 	for _, results := range taskResults {
 		for _, result := range results {
-			if result.tradesRatio < miningConfig.TradesRatio {
-				continue
-			}
 			key := result.task[0].asset.asset.Symbol
 			assetResults[key] = append(assetResults[key], result)
 		}
@@ -320,6 +319,7 @@ func executeDataMiningTask(task dataMiningTask, bar *pb.ProgressBar, miningConfi
 					returnsSamples: []float64{},
 					cumulativeReturn: 1.0,
 					cumulativeMax: 1.0,
+					drawdownMax: 0.0,
 					enabled: true,
 				}
 				results = append(results, result)
@@ -382,24 +382,29 @@ func executeDataMiningTask(task dataMiningTask, bar *pb.ProgressBar, miningConfi
 				result.returnsSamples = append(result.returnsSamples, percent)
 				result.cumulativeReturn *= factor
 				result.cumulativeMax = max(result.cumulativeMax, result.cumulativeReturn)
+				drawdown := 1.0 - result.cumulativeReturn / result.cumulativeMax
+				result.drawdownMax = max(result.drawdownMax, drawdown)
 			}
 		}
 		if !stillWorking {
 			break
 		}
-		if miningConfig.StrategyFilter != nil {
-			for _, result := range results {
-				if result.enabled {
-					drawdown := result.cumulativeMax - result.cumulativeReturn > miningConfig.Drawdown
-					enoughSamples := len(result.equityCurve) >= miningConfig.StrategyFilter.Trades
-					badPerformance := result.cumulativeReturn < miningConfig.StrategyFilter.Limit
-					if drawdown || (enoughSamples && badPerformance) {
-						result.enabled = false
-						result.equityCurve = nil
-						result.returnsSamples = nil
-						// Hack to suppress warning
-						var _ = result.returnsSamples
-					}
+		for i := range results {
+			result := &results[i]
+			if result.enabled {
+				drawdownExceeded := result.drawdownMax > miningConfig.Drawdown
+				var enoughSamples, badPerformance bool
+				if miningConfig.StrategyFilter != nil {
+					enoughSamples = len(result.equityCurve) >= miningConfig.StrategyFilter.Trades
+					badPerformance = result.cumulativeReturn < miningConfig.StrategyFilter.Limit
+				} else {
+					enoughSamples = false
+					badPerformance = false
+				}
+				if drawdownExceeded || (enoughSamples && badPerformance) {
+					result.enabled = false
+					result.equityCurve = nil
+					result.returnsSamples = nil
 				}
 			}
 		}
@@ -432,8 +437,14 @@ func executeDataMiningTask(task dataMiningTask, bar *pb.ProgressBar, miningConfi
 		result.tradesRatio = getTradesRatio(result.equityCurve, threshold1.asset.intradayRecords, miningConfig)
 		result.returnsSamples = nil
 	}
+	finalResults := []dataMiningResult{}
+	for _, result := range results {
+		if result.tradesRatio > miningConfig.TradesRatio {
+			finalResults = append(finalResults, result)
+		}
+	}
 	bar.Increment()
-	return results
+	return finalResults
 }
 
 func getRiskAdjusted(returnsSamples []float64) float64 {
@@ -616,6 +627,7 @@ func getStrategyMiningResult(
 		RiskAdjusted: result.riskAdjusted,
 		RiskAdjustedMin: result.riskAdjustedMin,
 		RiskAdjustedRecent: result.riskAdjustedRecent,
+		MaxDrawdown: result.drawdownMax,
 		TradesRatio: result.tradesRatio,
 		Plot: getFileURL(dailyRecordsPlotPath),
 	}

@@ -15,6 +15,7 @@ function renderDataMiningUI() {
 			"RAR",
 			"MinRAR",
 			"RecRAR",
+			"Max Drawdown",
 			"Days Traded",
 			"Equity Curve"
 		];
@@ -56,6 +57,7 @@ function renderDataMiningUI() {
 				getRiskAdjusted(strategy.riskAdjusted),
 				getRiskAdjusted(strategy.riskAdjustedMin),
 				getRiskAdjusted(strategy.riskAdjustedRecent),
+				[getPercentage(strategy.maxDrawdown), true],
 				[getPercentage(strategy.tradesRatio), true],
 				[equityCurve, false],
 			];
