@@ -6,6 +6,7 @@ import (
 	"math"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"slices"
 	"time"
 
@@ -24,13 +25,19 @@ type DataMiningConfiguration struct {
 	FeaturesOnly []string `yaml:"featuresOnly"`
 	EnableShort bool `yaml:"enableShort"`
 	StrategyLimit int `yaml:"strategyLimit"`
+	StrategyFilter *StrategyFilter `yaml:"strategyFilter"`
 	DateMin *SerializableDate `yaml:"dateMin"`
 	DateMax *SerializableDate `yaml:"dateMax"`
 	TimeMin *SerializableDuration `yaml:"timeMin"`
 	TimeMax *SerializableDuration `yaml:"timeMax"`
 	Weekdays []SerializableWeekday `yaml:"weekdays"`
-	TradesMin float64 `yaml:"tradesMin"`
+	TradesRatio float64 `yaml:"tradesRatio"`
 	Thresholds [][]float64 `yaml:"thresholds"`
+}
+
+type StrategyFilter struct {
+	Trades int `yaml:"trades"`
+	Limit float64 `yaml:"limit"`
 }
 
 type positionSide int
@@ -67,10 +74,13 @@ type dataMiningResult struct {
 	side positionSide
 	timeOfDay *time.Duration
 	equityCurve []equityCurveSample
+	returnsSamples []float64
 	riskAdjusted float64
 	riskAdjustedMin float64
 	riskAdjustedRecent float64
 	tradesRatio float64
+	cumulativeReturn float64
+	enabled bool
 }
 
 type equityCurveSample struct {
@@ -121,6 +131,7 @@ func DataMine(yamlPath string) {
 	launchProfiler()
 	model := executeDataMiningConfig(miningConfig)
 	runtime.GC()
+	debug.FreeOSMemory()
 	runBrowser("Data Mining", dataMiningScript, model, true)
 }
 
@@ -246,7 +257,7 @@ func processResults(
 	assetResults := map[string][]dataMiningResult{}
 	for _, results := range taskResults {
 		for _, result := range results {
-			if result.tradesRatio < miningConfig.TradesMin {
+			if result.tradesRatio < miningConfig.TradesRatio {
 				continue
 			}
 			key := result.task[0].asset.asset.Symbol
@@ -289,7 +300,6 @@ func executeDataMiningTask(task dataMiningTask, bar *pb.ProgressBar, miningConfi
 	threshold2 := &task[1]
 	returnsAccessors := getReturnsAccessors()
 	results := []dataMiningResult{}
-	allReturnsSamples := [][]float64{}
 	sides := []positionSide{SideLong}
 	if miningConfig.EnableShort {
 		sides = append(sides, SideShort)
@@ -305,9 +315,11 @@ func executeDataMiningTask(task dataMiningTask, bar *pb.ProgressBar, miningConfi
 					side: side,
 					timeOfDay: &timeOfDay,
 					equityCurve: []equityCurveSample{},
+					returnsSamples: []float64{},
+					cumulativeReturn: 1.0,
+					enabled: true,
 				}
 				results = append(results, result)
-				allReturnsSamples = append(allReturnsSamples, []float64{})
 			}
 		}
 	}
@@ -321,15 +333,19 @@ func executeDataMiningTask(task dataMiningTask, bar *pb.ProgressBar, miningConfi
 			continue
 		}
 		asset := &threshold1.asset.asset
-		for i := range results {
-			result := &results[i]
+		stillWorking := false
+		for j := range results {
+			result := &results[j]
+			if !result.enabled {
+				continue
+			}
+			stillWorking = true
 			if result.timeOfDay != nil {
 				timeOfDay := getTimeOfDay(record1.Timestamp)
 				if timeOfDay != *result.timeOfDay {
 					continue
 				}
 			}
-			returnsSamples := &allReturnsSamples[i]
 			returnsRecord := result.returns.get(record1)
 			if returnsRecord == nil {
 				continue
@@ -354,48 +370,70 @@ func executeDataMiningTask(task dataMiningTask, bar *pb.ProgressBar, miningConfi
 			}
 			*equityCurve = append(*equityCurve, sample)
 			if !math.IsNaN(returnsRecord.Percent) {
-				*returnsSamples = append(*returnsSamples, returnsRecord.Percent)
+				factor := 1.0 + returnsRecord.Percent
+				percent := returnsRecord.Percent
+				if result.side == SideShort {
+					factor = 1.0 / factor
+					percent = factor - 1.0
+				}
+				result.returnsSamples = append(result.returnsSamples, percent)
+				result.cumulativeReturn *= factor
+			}
+		}
+		if !stillWorking {
+			break
+		}
+		if miningConfig.StrategyFilter != nil {
+			for _, result := range results {
+				if result.enabled {
+					enoughSamples := len(result.equityCurve) >= miningConfig.StrategyFilter.Trades
+					badPerformance := result.cumulativeReturn < miningConfig.StrategyFilter.Limit
+					if enoughSamples && badPerformance {
+						result.enabled = false
+						result.equityCurve = nil
+						result.returnsSamples = nil
+						// Hack to suppress warning
+						var _ = result.returnsSamples
+					}
+				}
 			}
 		}
 	}
 	filteredResults := []dataMiningResult{}
 	for _, result := range results {
-		if len(result.equityCurve) > 0 {
+		if result.enabled && len(result.equityCurve) > 0 {
 			filteredResults = append(filteredResults, result)
 		}
 	}
 	results = filteredResults
 	for i := range results {
 		result := &results[i]
-		returnsSamples := allReturnsSamples[i]
-		segmentSize := len(returnsSamples) / riskAdjustedSegments
+		segmentSize := len(result.returnsSamples) / riskAdjustedSegments
 		segments := []float64{}
-		for j := 0; j < riskAdjustedSegments; j++ {
+		for j := range riskAdjustedSegments {
 			jNext := j + 1
 			offset := j * segmentSize
 			end := jNext * segmentSize
 			if jNext == riskAdjustedSegments {
-				end = len(returnsSamples)
+				end = len(result.returnsSamples)
 			}
-			samples := returnsSamples[offset:end]
-			riskAdjusted := getRiskAdjusted(samples, result.side)
+			samples := result.returnsSamples[offset:end]
+			riskAdjusted := getRiskAdjusted(samples)
 			segments = append(segments, riskAdjusted)
 		}
-		result.riskAdjusted = getRiskAdjusted(returnsSamples, result.side)
+		result.riskAdjusted = getRiskAdjusted(result.returnsSamples)
 		result.riskAdjustedMin = slices.Min(segments)
 		result.riskAdjustedRecent = segments[len(segments) - 1]
 		result.tradesRatio = getTradesRatio(result.equityCurve, threshold1.asset.intradayRecords, miningConfig)
+		result.returnsSamples = nil
 	}
 	bar.Increment()
 	return results
 }
 
-func getRiskAdjusted(returnsSamples []float64, side positionSide) float64 {
+func getRiskAdjusted(returnsSamples []float64) float64 {
 	mean := stat.Mean(returnsSamples, nil)
 	stdDev := stat.StdDev(returnsSamples, nil)
-	if side == SideShort {
-		mean = - mean
-	}
 	riskAdjusted := mean / stdDev
 	return riskAdjusted
 }
