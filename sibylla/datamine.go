@@ -22,6 +22,7 @@ const riskAdjustedSegments = 3
 type DataMiningConfiguration struct {
 	Assets []string `yaml:"assets"`
 	FeaturesOnly []string `yaml:"featuresOnly"`
+	EnableShort bool `yaml:"enableShort"`
 	StrategyLimit int `yaml:"strategyLimit"`
 	DateMin *SerializableDate `yaml:"dateMin"`
 	DateMax *SerializableDate `yaml:"dateMax"`
@@ -216,7 +217,7 @@ func getDataMiningTasks(assetRecords []assetRecords, miningConfig DataMiningConf
 		for j, asset2 := range assetRecords {
 			for k, feature1 := range accessors {
 				for l, feature2 := range accessors {
-					if i == j && k == l {
+					if i == j && k >= l {
 						continue
 					}
 					for _, minMax1 := range miningConfig.Thresholds {
@@ -287,9 +288,9 @@ func executeDataMiningTask(task dataMiningTask, bar *pb.ProgressBar, miningConfi
 	returnsAccessors := getReturnsAccessors()
 	results := []dataMiningResult{}
 	allReturnsSamples := [][]float64{}
-	sides := [2]positionSide{
-		SideLong,
-		SideShort,
+	sides := []positionSide{SideLong}
+	if miningConfig.EnableShort {
+		sides = append(sides, SideShort)
 	}
 	for _, returns := range returnsAccessors {
 		for _, side := range sides {
@@ -420,6 +421,7 @@ func loadDataMiningConfiguration(path string) DataMiningConfiguration {
 		log.Fatal("Failed to unmarshal YAML:", err)
 	}
 	configuration.sanityCheck()
+	configuration.Assets = append(configuration.Assets, configuration.FeaturesOnly...)
 	return *configuration
 }
 
