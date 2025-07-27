@@ -26,6 +26,7 @@ type DataMiningConfiguration struct {
 	EnableShort bool `yaml:"enableShort"`
 	StrategyLimit int `yaml:"strategyLimit"`
 	StrategyFilter *StrategyFilter `yaml:"strategyFilter"`
+	Drawdown float64 `yaml:"drawdown"`
 	DateMin *SerializableDate `yaml:"dateMin"`
 	DateMax *SerializableDate `yaml:"dateMax"`
 	TimeMin *SerializableDuration `yaml:"timeMin"`
@@ -80,6 +81,7 @@ type dataMiningResult struct {
 	riskAdjustedRecent float64
 	tradesRatio float64
 	cumulativeReturn float64
+	cumulativeMax float64
 	enabled bool
 }
 
@@ -317,6 +319,7 @@ func executeDataMiningTask(task dataMiningTask, bar *pb.ProgressBar, miningConfi
 					equityCurve: []equityCurveSample{},
 					returnsSamples: []float64{},
 					cumulativeReturn: 1.0,
+					cumulativeMax: 1.0,
 					enabled: true,
 				}
 				results = append(results, result)
@@ -378,6 +381,7 @@ func executeDataMiningTask(task dataMiningTask, bar *pb.ProgressBar, miningConfi
 				}
 				result.returnsSamples = append(result.returnsSamples, percent)
 				result.cumulativeReturn *= factor
+				result.cumulativeMax = max(result.cumulativeMax, result.cumulativeReturn)
 			}
 		}
 		if !stillWorking {
@@ -386,9 +390,10 @@ func executeDataMiningTask(task dataMiningTask, bar *pb.ProgressBar, miningConfi
 		if miningConfig.StrategyFilter != nil {
 			for _, result := range results {
 				if result.enabled {
+					drawdown := result.cumulativeMax - result.cumulativeReturn > miningConfig.Drawdown
 					enoughSamples := len(result.equityCurve) >= miningConfig.StrategyFilter.Trades
 					badPerformance := result.cumulativeReturn < miningConfig.StrategyFilter.Limit
-					if enoughSamples && badPerformance {
+					if drawdown || (enoughSamples && badPerformance) {
 						result.enabled = false
 						result.equityCurve = nil
 						result.returnsSamples = nil
