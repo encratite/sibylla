@@ -370,7 +370,7 @@ func executeDataMiningTask(task dataMiningTask, bar *pb.ProgressBar, miningConfi
 		result.riskAdjusted = getRiskAdjusted(returnsSamples, result.side)
 		result.riskAdjustedMin = slices.Min(segments)
 		result.riskAdjustedRecent = segments[len(segments) - 1]
-		result.tradesRatio = getTradesRatio(result.equityCurve, miningConfig)
+		result.tradesRatio = getTradesRatio(result.equityCurve, threshold1.asset.intradayRecords, miningConfig)
 	}
 	bar.Increment()
 	return results
@@ -569,19 +569,31 @@ func getStrategyMiningResult(
 	return output
 }
 
-func getTradesRatio(equityCurve []equityCurveSample, miningConfig DataMiningConfiguration) float64 {
-	first := equityCurve[0]
-	last := equityCurve[len(equityCurve) - 1]
+func getTradesRatio(
+	equityCurve []equityCurveSample,
+	intradayRecords []FeatureRecord,
+	miningConfig DataMiningConfiguration,
+) float64 {
+	equityFirst := equityCurve[0].timestamp
+	equityLast := equityCurve[len(equityCurve) - 1].timestamp
+	recordsFirst := intradayRecords[0].Timestamp
+	recordsLast := intradayRecords[len(intradayRecords) - 1].Timestamp
 	var start, end time.Time
 	if miningConfig.DateMin != nil {
 		start = (*miningConfig.DateMin).Time
 	} else {
-		start = first.timestamp
+		start = equityFirst
+	}
+	if start.Before(recordsFirst) {
+		start = recordsFirst
 	}
 	if miningConfig.DateMax != nil {
 		end = (*miningConfig.DateMax).Time
 	} else {
-		end = last.timestamp
+		end = equityLast
+	}
+	if recordsLast.After(end) {
+		end = recordsLast
 	}
 	duration := end.Sub(start)
 	daysTradedMap := map[time.Time]struct{}{}
