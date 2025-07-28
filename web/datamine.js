@@ -5,9 +5,13 @@ function renderDataMiningUI() {
 	});
 	model.results.forEach(asset => {
 		const header = createElement("h1", container);
-		header.textContent = `${asset.symbol} Strategies`;
-		const table = createElement("table", container, "assets");
+		header.textContent = `${asset.symbol} (${asset.strategies.length} Strategies)`;
+		let tableContainer = null;
 		asset.strategies.forEach((strategy, index) => {
+			if (index % 2 === 0) {
+				tableContainer = createElement("div", container, "strategy");
+			}
+			const table = createElement("table", tableContainer);
 			const isLong = strategy.side === 0;
 			const side = createElement("span");
 			side.textContent = isLong ? "Long" : "Short";
@@ -28,37 +32,33 @@ function renderDataMiningUI() {
 				className: "weekdayPlot",
 				onclick: () => showWeekdayPlot(strategyName, strategy),
 			});
-			const featureNames = strategy.features.map(feature => {
-				return `${feature.symbol}.${feature.name}`;
-			});
-			const featureThresholds = strategy.features.map(feature => {
-				return `${feature.min} - ${feature.max}`;
+			const features = strategy.features.map(feature => {
+				return `${feature.symbol}.${feature.name} (${feature.min}, ${feature.max})`;
 			});
 			const timeOfDay = strategy.timeOfDay != null ? strategy.timeOfDay : "-";
-			const cells = [
-				["Strategy", strategyName],
-				["Feature 1", featureNames[0]],
-				["Threshold 1", featureThresholds[0]],
-				["Feature 2", featureNames[1]],
-				["Threshold 2", featureThresholds[1]],
-				["Side", side],
-				["Time", timeOfDay],
-				["Exit", strategy.exit],
-				["Returns", formatMoney(strategy.returns)],
+			const cells1 = [
+				["Strategy", strategyName, false],
+				["Feature 1", features[0], false],
+				["Feature 2", features[1], false],
+				["Side", side, false],
+				["Time", timeOfDay, false],
+				["Exit", strategy.exit, false],
+			];
+			const cells2 = [
+				["Returns", formatMoney(strategy.returns), true],
 				getRiskAdjusted("RAR", strategy.riskAdjusted),
 				getRiskAdjusted("MinRAR", strategy.riskAdjustedMin),
 				getRiskAdjusted("RecRAR", strategy.riskAdjustedRecent),
-				["Max Drawdown", getPercentage(strategy.maxDrawdown)],
-				["Days Traded", getPercentage(strategy.tradesRatio)],
+				["Max Drawdown", getPercentage(strategy.maxDrawdown), true],
+				["Days Traded", getPercentage(strategy.tradesRatio), true],
 			];
-			cells.forEach((definition, index) => {
-				const description = `${definition[0]}:`;
+			const renderCell = (definition, row) => {
+				const description = definition[0];
 				const content = definition[1];
 				const isNumeric = definition[2];
-				const row = createElement("tr", table);
 				const descriptionCell = createElement("td", row, "description");
 				descriptionCell.textContent = description;
-				const contentCell = createElement("td", row, "value");
+				const contentCell = createElement("td", row);
 				if (typeof content === "string") {
 					contentCell.textContent = content;
 					if (isNumeric === true) {
@@ -67,19 +67,18 @@ function renderDataMiningUI() {
 				} else {
 					contentCell.appendChild(content);
 				}
-				if (index === 0) {
-					row.classList.add("firstRow");
-					const equityCurveCell = createElement("td", row, {
-						className: "plot",
-						rowSpan: cells.length,
-					});
-					equityCurveCell.appendChild(equityCurve);
-				}
-			});
-			if (index < asset.strategies.length - 1) {
-				const paddingRow = createElement("tr", table);
-				createElement("td", paddingRow, "padding");
+			};
+			for (let i = 0; i < cells1.length; i++) {
+				const row = createElement("tr", table);
+				renderCell(cells1[i], row);
+				renderCell(cells2[i], row);
 			}
+			const plotRow = createElement("tr", table);
+			const equityCurveCell = createElement("td", plotRow, {
+				className: "plot",
+				colSpan: cells1.length,
+			});
+			equityCurveCell.appendChild(equityCurve);
 		});
 	});
 }

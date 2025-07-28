@@ -22,8 +22,8 @@ const scriptPathPlaceholder = "SCRIPT_PATH"
 func runBrowser(title, script string, model any, large bool) {
 	var width, height uint
 	if large {
-		width = 1440
-		height = 1080
+		width = 1600
+		height = 1200
 	} else {
 		width = 1280
 		height = 960

@@ -9,7 +9,7 @@
 
 .container-data-mine {
 	margin: auto;
-	width: 1360px;
+	width: 1500px;
 
 	h1 {
 		font-size: 1.8em;
@@ -49,11 +49,18 @@
 	}
 }
 
-.assets {
-	border-collapse: collapse;
-	border-spacing: 0;
-	width: 100%;
+.strategy {
 	margin-bottom: 40px;
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	box-sizing: border-box;
+
+	table {
+		border-collapse: collapse;
+		border-spacing: 0;
+		width: 730px;
+	}
 
 	td {
 		vertical-align: top;
@@ -64,7 +71,7 @@
 
 	img {
 		cursor: pointer;
-		height: 320px;
+		width: 100%;
 	}
 
 	.plot {
@@ -73,19 +80,13 @@
 
 	.description {
 		font-weight: bold;
-		width: 140px;
 	}
 
-	.value {
-		width: 200px;
+	.numeric {
+		text-align: right;
 	}
 	
 	.short {
 		color: red;
-	}
-
-	.padding {
-		border: none;
-		height: 30px;
 	}
 }
