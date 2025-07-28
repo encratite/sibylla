@@ -36,12 +36,36 @@ function renderDataMiningUI() {
 				const max = truncateThreshold(feature.max);
 				return `${feature.symbol}.${feature.name} (${min}, ${max})`;
 			});
+			let weekdays;
+			switch (strategy.weekday) {
+				case null:
+					weekdays = "All";
+					break;
+				case 1:
+					weekdays = "No Mondays";
+					break;
+				case 2:
+					weekdays = "No Tuesdays";
+					break;
+				case 3:
+					weekdays = "No Wednesdays";
+					break;
+				case 4:
+					weekdays = "No Thursdays";
+					break;
+				case 5:
+					weekdays = "No Fridays";
+					break;
+				default:
+					throw new Error("Unknown weekday");
+			}
 			const timeOfDay = strategy.timeOfDay != null ? strategy.timeOfDay : "-";
 			const cells1 = [
 				["Strategy", strategyName, false],
 				["Feature 1", features[0], false],
 				["Feature 2", features[1], false],
 				["Side", side, false],
+				["Weekdays", weekdays, false],
 				["Time", timeOfDay, false],
 				["Exit", strategy.exit, false],
 			];
@@ -52,8 +76,12 @@ function renderDataMiningUI() {
 				getRiskAdjusted("RecRAR", strategy.riskAdjustedRecent),
 				["Max Drawdown", getPercentage(strategy.maxDrawdown), true],
 				["Days Traded", getPercentage(strategy.tradesRatio), true],
+				null,
 			];
 			const renderCell = (definition, row) => {
+				if (definition === null) {
+					return null;
+				}
 				const description = definition[0];
 				const content = definition[1];
 				const isNumeric = definition[2];
@@ -68,11 +96,15 @@ function renderDataMiningUI() {
 				} else {
 					contentCell.appendChild(content);
 				}
+				return contentCell;
 			};
 			for (let i = 0; i < cells1.length; i++) {
 				const row = createElement("tr", table);
-				renderCell(cells1[i], row);
+				const contentCell = renderCell(cells1[i], row);
 				renderCell(cells2[i], row);
+				if (i === cells1.length - 1) {
+					contentCell.colSpan = 3;
+				}
 			}
 			const plotRow = createElement("tr", table);
 			const equityCurveCell = createElement("td", plotRow, {

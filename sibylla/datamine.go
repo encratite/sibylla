@@ -31,7 +31,7 @@ type DataMiningConfiguration struct {
 	DateMax *SerializableDate `yaml:"dateMax"`
 	TimeMin *SerializableDuration `yaml:"timeMin"`
 	TimeMax *SerializableDuration `yaml:"timeMax"`
-	Weekdays []SerializableWeekday `yaml:"weekdays"`
+	EnableWeekdays bool `yaml:"enableWeekdays"`
 	TradesMin int `yaml:"tradesMin"`
 	TradesRatio float64 `yaml:"tradesRatio"`
 	Thresholds TresholdConfiguration `yaml:"thresholds"`
@@ -79,6 +79,7 @@ type dataMiningResult struct {
 	task dataMiningTask
 	returns returnsAccessor
 	side positionSide
+	weekdayMode *time.Weekday
 	timeOfDay *time.Duration
 	equityCurve []equityCurveSample
 	returnsSamples []float64
@@ -103,7 +104,7 @@ type DataMiningModel struct {
 	DateMax *string `json:"dateMax"`
 	TimeMin *string `json:"timeMin"`
 	TimeMax *string `json:"timeMax"`
-	Weekdays []int `json:"weekdays"`
+	EnableWeekdays bool `json:"enableWeekdays"`
 	Thresholds DataMiningThresholds `json:"thresholds"`
 	Results []AssetMiningResults `json:"results"`
 }
@@ -121,6 +122,7 @@ type AssetMiningResults struct {
 
 type StrategyMiningResult struct {
 	Side int `json:"side"`
+	Weekday *int `json:"weekday"`
 	TimeOfDay *string `json:"timeOfDay"`
 	Features []StrategyFeature `json:"features"`
 	Exit string `json:"exit"`
@@ -325,25 +327,35 @@ func executeDataMiningTask(task dataMiningTask, bar *pb.ProgressBar, miningConfi
 	if miningConfig.EnableShort {
 		sides = append(sides, SideShort)
 	}
+	weekdayModes := []*time.Weekday{nil}
+	if miningConfig.EnableWeekdays {
+		for i := int(time.Monday); i <= int(time.Friday); i++ {
+			day := time.Weekday(i)
+			weekdayModes = append(weekdayModes, &day)
+		}
+	}
 	for _, returns := range returnsAccessors {
-		for _, side := range sides {
-			for timeOfDay := miningConfig.TimeMin.Duration;
-				timeOfDay <= miningConfig.TimeMax.Duration;
-				timeOfDay += time.Duration(1) * time.Hour {
-				result := dataMiningResult{
-					task: task,
-					returns: returns,
-					side: side,
-					timeOfDay: &timeOfDay,
-					equityCurve: []equityCurveSample{},
-					returnsSamples: []float64{},
-					weekdayReturns: map[time.Weekday][]float64{},
-					cumulativeReturn: 1.0,
-					cumulativeMax: 1.0,
-					drawdownMax: 0.0,
-					enabled: true,
+		for _, weekdayMode := range weekdayModes {
+			for _, side := range sides {
+				for timeOfDay := miningConfig.TimeMin.Duration;
+					timeOfDay <= miningConfig.TimeMax.Duration;
+					timeOfDay += time.Duration(1) * time.Hour {
+					result := dataMiningResult{
+						task: task,
+						returns: returns,
+						side: side,
+						weekdayMode: weekdayMode,
+						timeOfDay: &timeOfDay,
+						equityCurve: []equityCurveSample{},
+						returnsSamples: []float64{},
+						weekdayReturns: map[time.Weekday][]float64{},
+						cumulativeReturn: 1.0,
+						cumulativeMax: 1.0,
+						drawdownMax: 0.0,
+						enabled: true,
+					}
+					results = append(results, result)
 				}
-				results = append(results, result)
 			}
 		}
 	}
@@ -369,6 +381,9 @@ func executeDataMiningTask(task dataMiningTask, bar *pb.ProgressBar, miningConfi
 				if timeOfDay != *result.timeOfDay {
 					continue
 				}
+			}
+			if result.weekdayMode != nil && *result.weekdayMode == record1.Timestamp.Weekday() {
+				continue
 			}
 			returnsRecord := result.returns.get(record1)
 			if returnsRecord == nil {
@@ -561,7 +576,7 @@ func getDataMiningModel(
 		DateMax: getDateStringPointer(miningConfig.DateMax),
 		TimeMin: getTimeOfDayStringPointer(miningConfig.TimeMin),
 		TimeMax: getTimeOfDayStringPointer(miningConfig.TimeMax),
-		Weekdays: getWeekdayInts(miningConfig.Weekdays),
+		EnableWeekdays: miningConfig.EnableWeekdays,
 		Thresholds: DataMiningThresholds{
 			Range: miningConfig.Thresholds.Range,
 			Increment: miningConfig.Thresholds.Increment,
@@ -621,14 +636,6 @@ func getTimeOfDayStringPointer(t *SerializableDuration) *string {
 	}
 }
 
-func getWeekdayInts(weekdays []SerializableWeekday) []int {
-	output := []int{}
-	for _, w := range weekdays {
-		output = append(output, int(w.Weekday))
-	}
-	return output
-}
-
 func getStrategyMiningResult(
 	symbol string,
 	index int,
@@ -641,6 +648,7 @@ func getStrategyMiningResult(
 	plotURL, weekdayPlotURL := createStrategyPlots(symbol, index, result)
 	output := StrategyMiningResult{
 		Side: int(result.side),
+		Weekday: (*int)(result.weekdayMode),
 		TimeOfDay: nil,
 		Features: []StrategyFeature{},
 		Exit: result.returns.name,
