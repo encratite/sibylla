@@ -1,13 +1,13 @@
 function renderDataMiningUI() {
 	const model = getModel();
-	const topLevel = createElement("div", document.body, {
+	const container = createElement("div", document.body, {
 		className: "container-data-mine"
 	});
 	model.results.forEach(asset => {
-		const table = createElement("table", topLevel, "assets");
-		const headerRow = createElement("tr", table);
+		const header = createElement("h1", container);
+		header.textContent = `${asset.symbol} Strategies`;
+		const table = createElement("table", container, "assets");
 		asset.strategies.forEach((strategy, index) => {
-			const row = createElement("tr", table);
 			const isLong = strategy.side === 0;
 			const side = createElement("span");
 			side.textContent = isLong ? "Long" : "Short";
@@ -28,54 +28,58 @@ function renderDataMiningUI() {
 				className: "weekdayPlot",
 				onclick: () => showWeekdayPlot(strategyName, strategy),
 			});
-			const features = strategy.features.map(feature => {
-				return `${feature.symbol}.${feature.name} (${feature.min}, ${feature.max})`;
+			const featureNames = strategy.features.map(feature => {
+				return `${feature.symbol}.${feature.name}`;
+			});
+			const featureThresholds = strategy.features.map(feature => {
+				return `${feature.min} - ${feature.max}`;
 			});
 			const timeOfDay = strategy.timeOfDay != null ? strategy.timeOfDay : "-";
-			const cells1 = [
-				["Strategy", strategyName, false],
-				["Feature 1", features[0], false],
-				["Feature 2", features[1], false],
-				["Side", side, false],
-				["Time", timeOfDay, false],
-				["Exit", strategy.exit, false],
-			];
-			const cells2 = [
-				["Returns", formatMoney(strategy.returns), true],
+			const cells = [
+				["Strategy", strategyName],
+				["Feature 1", featureNames[0]],
+				["Threshold 1", featureThresholds[0]],
+				["Feature 2", featureNames[1]],
+				["Threshold 2", featureThresholds[1]],
+				["Side", side],
+				["Time", timeOfDay],
+				["Exit", strategy.exit],
+				["Returns", formatMoney(strategy.returns)],
 				getRiskAdjusted("RAR", strategy.riskAdjusted),
 				getRiskAdjusted("MinRAR", strategy.riskAdjustedMin),
 				getRiskAdjusted("RecRAR", strategy.riskAdjustedRecent),
-				["Max Drawdown", getPercentage(strategy.maxDrawdown), true],
-				["Days Traded", getPercentage(strategy.tradesRatio), true],
+				["Max Drawdown", getPercentage(strategy.maxDrawdown)],
+				["Days Traded", getPercentage(strategy.tradesRatio)],
 			];
-			const tableCell = createElement("td", row);
-			const innerTable = createElement("table", tableCell, "strategy");
-			const renderCell = (definition, innerRow) => {
+			cells.forEach((definition, index) => {
 				const description = `${definition[0]}:`;
 				const content = definition[1];
 				const isNumeric = definition[2];
-				const descriptionCell = createElement("td", innerRow, "description");
+				const row = createElement("tr", table);
+				const descriptionCell = createElement("td", row, "description");
 				descriptionCell.textContent = description;
-				const contentCell = createElement("td", innerRow);
+				const contentCell = createElement("td", row, "value");
 				if (typeof content === "string") {
 					contentCell.textContent = content;
 					if (isNumeric === true) {
-						contentCell.className = "numeric";
+						contentCell.classList.add("numeric");
 					}
 				} else {
 					contentCell.appendChild(content);
 				}
-			};
-			for (let i = 0; i < cells1.length; i++) {
-				const innerRow = createElement("tr", innerTable);
-				renderCell(cells1[i], innerRow);
-				renderCell(cells2[i], innerRow);
+				if (index === 0) {
+					row.classList.add("firstRow");
+					const equityCurveCell = createElement("td", row, {
+						className: "plot",
+						rowSpan: cells.length,
+					});
+					equityCurveCell.appendChild(equityCurve);
+				}
+			});
+			if (index < asset.strategies.length - 1) {
+				const paddingRow = createElement("tr", table);
+				createElement("td", paddingRow, "padding");
 			}
-			const plotClass = "plot";
-			const equityCurveCell = createElement("td", row, plotClass);
-			equityCurveCell.appendChild(equityCurve);
-			const weekdayPlotCell = createElement("td", row, plotClass);
-			weekdayPlotCell.appendChild(weekdayPlot);
 		});
 	});
 }

@@ -10,6 +10,13 @@
 .container-data-mine {
 	margin: auto;
 	width: 1360px;
+
+	h1 {
+		font-size: 1.8em;
+		margin: 0;
+		margin-bottom: 14px;
+		padding: 0;
+	}
 }
 
 .dailyRecords {
@@ -51,52 +58,34 @@
 	td {
 		vertical-align: top;
 		border: 1px solid black;
-		margin: 0;
-		padding: 0;
+		padding-left: 4px;
+		padding-right: 4px;
 	}
 
 	img {
-		width: 320px;
 		cursor: pointer;
+		height: 320px;
 	}
 
 	.plot {
 		text-align: center;
 	}
-}
-
-.strategy {
-	border-collapse: collapse;
-	border-spacing: 0;
-	width: 100%;
-
-	td {
-		border: 1px solid black;
-		padding-left: 4px;
-		padding-right: 4px;
-	}
-
-	tr:first-child td {
-		border-top: none;
-	}
-
-	td:first-child {
-		border-left: none;
-	}
-
-	td:last-child {
-		border-right: none;
-	}
 
 	.description {
 		font-weight: bold;
+		width: 140px;
 	}
 
-	.numeric {
-		text-align: right;
+	.value {
+		width: 200px;
 	}
 	
 	.short {
 		color: red;
+	}
+
+	.padding {
+		border: none;
+		height: 30px;
 	}
 }
