@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"golang.org/x/image/font/opentype"
+	"gonum.org/v1/gonum/stat"
 	"gonum.org/v1/plot"
 	"gonum.org/v1/plot/font"
 	"gonum.org/v1/plot/plotter"
@@ -75,7 +76,7 @@ func plotLine(yLabel string, plotterData plotter.XYs, money bool, path string) {
 	p.Add(line)
 	err = p.Save(12 * vg.Inch, 8 * vg.Inch, path)
 	if err != nil {
-		log.Fatal("Failed to save plot:", err)
+		log.Fatalf("Failed to save plot (%s): %v", path, err)
 	}
 }
 
@@ -94,7 +95,7 @@ func plotFeatureHistogram(stdDev float64, values []float64, path string) {
 	p := plot.New()
 	h, err := plotter.NewHist(plotterValues, bins)
 	if err != nil {
-		panic(err)
+		log.Fatal("Failed to create histogram plot:", err)
 	}
 	h.Normalize(1)
 	p.Add(h)
@@ -108,7 +109,41 @@ func plotFeatureHistogram(stdDev float64, values []float64, path string) {
 	}
 	err = p.Save(8 * vg.Inch, 4 * vg.Inch, path)
 	if err != nil {
-		panic(err)
+		log.Fatalf("Failed to save plot (%s): %v", path, err)
+	}
+}
+
+func plotWeekdayReturns(weekdayReturns map[time.Weekday][]float64, path string) {
+	labels := []string{
+		"Mon",
+		"Tue",
+		"Wed",
+		"Thu",
+		"Fri",
+	}
+	values := make(plotter.Values, len(labels))
+	for i := range labels {
+		samples, exists := weekdayReturns[time.Weekday(i + 1)]
+		var mean float64
+		if exists {
+			mean = stat.Mean(samples, nil)
+		} else {
+			mean = 0.0
+		}
+		values[i] = mean
+	}
+	p := plot.New()
+	p.NominalX(labels...)
+	bars, err := plotter.NewBarChart(values, vg.Points(25))
+	if err != nil {
+		log.Fatal("Failed to create bar chart:", err)
+	}
+	bars.LineStyle.Width = 0
+	bars.Color = color.RGBA{R: 255, A: 255}
+	p.Add(bars)
+	err = p.Save(4.5 * vg.Inch, 3 * vg.Inch, path)
+	if err != nil {
+		log.Fatalf("Failed to save plot (%s): %v", path, err)
 	}
 }
 

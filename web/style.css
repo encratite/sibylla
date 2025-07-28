@@ -48,40 +48,55 @@
 	width: 100%;
 	margin-bottom: 40px;
 
-	th {
-		text-align: left;
+	td {
+		vertical-align: top;
+		border: 1px solid black;
+		margin: 0;
+		padding: 0;
 	}
 
-	th, td {
-		vertical-align: top;
+	img {
+		width: 320px;
+		cursor: pointer;
+	}
+
+	.plot {
+		text-align: center;
+	}
+}
+
+.strategy {
+	border-collapse: collapse;
+	border-spacing: 0;
+	width: 100%;
+
+	td {
 		border: 1px solid black;
 		padding-left: 4px;
 		padding-right: 4px;
 	}
 
-	td.numeric {
-		text-align: right;
+	tr:first-child td {
+		border-top: none;
 	}
 
-	img {
-		width: 240px;
-		cursor: pointer;
+	td:first-child {
+		border-left: none;
 	}
 
 	td:last-child {
-		text-align: center;
+		border-right: none;
 	}
 
+	.description {
+		font-weight: bold;
+	}
+
+	.numeric {
+		text-align: right;
+	}
+	
 	.short {
 		color: red;
-	}
-
-	ul, li {
-		margin: 0;
-		padding: 0;
-	}
-
-	li {
-		list-style: none;
 	}
 }

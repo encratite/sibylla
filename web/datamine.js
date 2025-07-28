@@ -5,25 +5,7 @@ function renderDataMiningUI() {
 	});
 	model.results.forEach(asset => {
 		const table = createElement("table", topLevel, "assets");
-		const headers = [
-			"Strategy",
-			"Features",
-			"Side",
-			"Time",
-			"Exit",
-			"Returns",
-			"RAR",
-			"MinRAR",
-			"RecRAR",
-			"Max Drawdown",
-			"Days Traded",
-			"Equity Curve"
-		];
 		const headerRow = createElement("tr", table);
-		headers.forEach(name => {
-			const cell = createElement("th", headerRow);
-			cell.textContent = name;
-		});
 		asset.strategies.forEach((strategy, index) => {
 			const row = createElement("tr", table);
 			const isLong = strategy.side === 0;
@@ -32,70 +14,97 @@ function renderDataMiningUI() {
 			if (isLong === false) {
 				side.className = "short";
 			}
-			const getRiskAdjusted = property => {
-				return [property.toFixed(3), true];
+			const getRiskAdjusted = (description, property) => {
+				return [description, property.toFixed(3), true];
 			};
 			const strategyName = `${asset.symbol} #${index + 1}`;
 			const equityCurve = createElement("img", null, {
 				src: strategy.plot,
+				className: "equityCurve",
 				onclick: () => showEquityCurve(strategyName, strategy),
 			});
-			const featuresList = createElement("ul");
-			strategy.features.forEach(feature => {
-				const element = createElement("li", featuresList);
-				element.textContent = `${feature.symbol}.${feature.name} (${feature.min}, ${feature.max})`
-				featuresList.append(element);
+			const weekdayPlot = createElement("img", null, {
+				src: strategy.weekdayPlot,
+				className: "weekdayPlot",
+				onclick: () => showWeekdayPlot(strategyName, strategy),
+			});
+			const features = strategy.features.map(feature => {
+				return `${feature.symbol}.${feature.name} (${feature.min}, ${feature.max})`;
 			});
 			const timeOfDay = strategy.timeOfDay != null ? strategy.timeOfDay : "-";
-			const cells = [
-				[strategyName, false],
-				[featuresList, false],
-				[side, false],
-				[timeOfDay, false],
-				[strategy.exit, false],
-				[formatMoney(strategy.returns), true],
-				getRiskAdjusted(strategy.riskAdjusted),
-				getRiskAdjusted(strategy.riskAdjustedMin),
-				getRiskAdjusted(strategy.riskAdjustedRecent),
-				[getPercentage(strategy.maxDrawdown), true],
-				[getPercentage(strategy.tradesRatio), true],
-				[equityCurve, false],
+			const cells1 = [
+				["Strategy", strategyName, false],
+				["Feature 1", features[0], false],
+				["Feature 2", features[1], false],
+				["Side", side, false],
+				["Time", timeOfDay, false],
+				["Exit", strategy.exit, false],
 			];
-			cells.forEach(definition => {
-				const content = definition[0];
-				const isNumeric = definition[1];
-				const cell = createElement("td", row);
+			const cells2 = [
+				["Returns", formatMoney(strategy.returns), true],
+				getRiskAdjusted("RAR", strategy.riskAdjusted),
+				getRiskAdjusted("MinRAR", strategy.riskAdjustedMin),
+				getRiskAdjusted("RecRAR", strategy.riskAdjustedRecent),
+				["Max Drawdown", getPercentage(strategy.maxDrawdown), true],
+				["Days Traded", getPercentage(strategy.tradesRatio), true],
+			];
+			const tableCell = createElement("td", row);
+			const innerTable = createElement("table", tableCell, "strategy");
+			const renderCell = (definition, innerRow) => {
+				const description = `${definition[0]}:`;
+				const content = definition[1];
+				const isNumeric = definition[2];
+				const descriptionCell = createElement("td", innerRow, "description");
+				descriptionCell.textContent = description;
+				const contentCell = createElement("td", innerRow);
 				if (typeof content === "string") {
-					cell.textContent = content;
+					contentCell.textContent = content;
 					if (isNumeric === true) {
-						cell.className = "numeric";
+						contentCell.className = "numeric";
 					}
 				} else {
-					cell.appendChild(content);
+					contentCell.appendChild(content);
 				}
-			});
+			};
+			for (let i = 0; i < cells1.length; i++) {
+				const innerRow = createElement("tr", innerTable);
+				renderCell(cells1[i], innerRow);
+				renderCell(cells2[i], innerRow);
+			}
+			const plotClass = "plot";
+			const equityCurveCell = createElement("td", row, plotClass);
+			equityCurveCell.appendChild(equityCurve);
+			const weekdayPlotCell = createElement("td", row, plotClass);
+			weekdayPlotCell.appendChild(weekdayPlot);
 		});
 	});
 }
 
-function showEquityCurve(strategyName, strategy) {
-	const padding = 35;
-	const width = 1152 + padding;
-	const height = 768 + padding;
+function showImage(title, src, width, height, padding) {
+	width += padding;
+	height += padding;
 	const left = 100;
 	const top = 100;
 	const equityCurve = window.open("", "_blank", `width=${width},height=${height},left=${left},top=${top},resizable=yes`);
 	equityCurve.document.write(`
 		<!doctype html>
 			<head>
-				<title>${strategyName}</title>
+				<title>${title}</title>
 			</head>
 		</html>
 	`);
 	equityCurve.document.close();
 	const image = createElement("img", equityCurve.document.body, {
-		src: strategy.plot
+		src: src
 	});
+}
+
+function showEquityCurve(strategyName, strategy) {
+	showImage(`${strategyName} - Equity Curve`, strategy.plot, 1152, 768, 35);
+}
+
+function showWeekdayPlot(strategyName, strategy) {
+	showImage(`${strategyName} - Returns by Weekday`, strategy.weekdayPlot, 432, 288, 35);
 }
 
 addEventListener("DOMContentLoaded", event => {

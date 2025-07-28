@@ -77,6 +77,7 @@ type dataMiningResult struct {
 	timeOfDay *time.Duration
 	equityCurve []equityCurveSample
 	returnsSamples []float64
+	weekdayReturns map[time.Weekday][]float64
 	riskAdjusted float64
 	riskAdjustedMin float64
 	riskAdjustedRecent float64
@@ -120,6 +121,7 @@ type StrategyMiningResult struct {
 	MaxDrawdown float64 `json:"maxDrawdown"`
 	TradesRatio float64 `json:"tradesRatio"`
 	Plot string `json:"plot"`
+	WeekdayPlot string `json:"weekdayPlot"`
 }
 
 type StrategyFeature struct {
@@ -320,6 +322,7 @@ func executeDataMiningTask(task dataMiningTask, bar *pb.ProgressBar, miningConfi
 					timeOfDay: &timeOfDay,
 					equityCurve: []equityCurveSample{},
 					returnsSamples: []float64{},
+					weekdayReturns: map[time.Weekday][]float64{},
 					cumulativeReturn: 1.0,
 					cumulativeMax: 1.0,
 					drawdownMax: 0.0,
@@ -383,6 +386,8 @@ func executeDataMiningTask(task dataMiningTask, bar *pb.ProgressBar, miningConfi
 					percent = factor - 1.0
 				}
 				result.returnsSamples = append(result.returnsSamples, percent)
+				weekday := record1.Timestamp.Weekday()
+				result.weekdayReturns[weekday] = append(result.weekdayReturns[weekday], percent)
 				result.cumulativeReturn *= factor
 				result.cumulativeMax = max(result.cumulativeMax, result.cumulativeReturn)
 				drawdown := 1.0 - result.cumulativeReturn / result.cumulativeMax
@@ -446,8 +451,7 @@ func executeDataMiningTask(task dataMiningTask, bar *pb.ProgressBar, miningConfi
 }
 
 func getRiskAdjusted(returnsSamples []float64) float64 {
-	mean := stat.Mean(returnsSamples, nil)
-	stdDev := stat.StdDev(returnsSamples, nil)
+	mean, stdDev := stat.MeanStdDev(returnsSamples, nil)
 	riskAdjusted := mean / stdDev
 	return riskAdjusted
 }
@@ -613,9 +617,7 @@ func getStrategyMiningResult(
 	first := equityCurve[0]
 	last := equityCurve[len(equityCurve) - 1]
 	returns := last.cash - first.cash
-	fileName := fmt.Sprintf("%s.strategy%02d.png", symbol, index)
-	dailyRecordsPlotPath := filepath.Join(configuration.TempPath, fileName)
-	plotEquityCurve(equityCurve, dailyRecordsPlotPath)
+	plotURL, weekdayPlotURL := createStrategyPlots(symbol, index, result)
 	output := StrategyMiningResult{
 		Side: int(result.side),
 		TimeOfDay: nil,
@@ -627,7 +629,8 @@ func getStrategyMiningResult(
 		RiskAdjustedRecent: result.riskAdjustedRecent,
 		MaxDrawdown: result.drawdownMax,
 		TradesRatio: result.tradesRatio,
-		Plot: getFileURL(dailyRecordsPlotPath),
+		Plot: plotURL,
+		WeekdayPlot: weekdayPlotURL,
 	}
 	if result.timeOfDay != nil {
 		timeOfDayString := getTimeOfDayString(*result.timeOfDay)
@@ -643,6 +646,22 @@ func getStrategyMiningResult(
 		output.Features = append(output.Features, feature)
 	}
 	return output
+}
+
+func createStrategyPlots(
+	symbol string,
+	index int,
+	result dataMiningResult,
+) (string, string) {
+	plotFileName := fmt.Sprintf("%s.strategy%02d.png", symbol, index)
+	plotPath := filepath.Join(configuration.TempPath, plotFileName)
+	plotEquityCurve(result.equityCurve, plotPath)
+	weekdayPlotFilename := fmt.Sprintf("%s.strategy%02d.weekday.png", symbol, index)
+	weekdayPlotPath := filepath.Join(configuration.TempPath, weekdayPlotFilename)
+	plotWeekdayReturns(result.weekdayReturns, weekdayPlotPath)
+	plotURL := getFileURL(plotPath)
+	weekdayPlotURL := getFileURL(weekdayPlotPath)
+	return plotURL, weekdayPlotURL
 }
 
 func getTradesRatio(
@@ -687,4 +706,5 @@ func (d *dataMiningResult) disable() {
 	d.enabled = false
 	d.equityCurve = nil
 	d.returnsSamples = nil
+	d.weekdayReturns = nil
 }
