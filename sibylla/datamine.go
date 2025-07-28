@@ -34,12 +34,17 @@ type DataMiningConfiguration struct {
 	Weekdays []SerializableWeekday `yaml:"weekdays"`
 	TradesMin int `yaml:"tradesMin"`
 	TradesRatio float64 `yaml:"tradesRatio"`
-	Thresholds [][]float64 `yaml:"thresholds"`
+	Thresholds TresholdConfiguration `yaml:"thresholds"`
 }
 
 type StrategyFilter struct {
 	Trades int `yaml:"trades"`
 	Limit float64 `yaml:"limit"`
+}
+
+type TresholdConfiguration struct {
+	Range float64 `yaml:"range"`
+	Increment float64 `yaml:"increment"`
 }
 
 type positionSide int
@@ -99,8 +104,13 @@ type DataMiningModel struct {
 	TimeMin *string `json:"timeMin"`
 	TimeMax *string `json:"timeMax"`
 	Weekdays []int `json:"weekdays"`
-	Thresholds [][]float64 `json:"thresholds"`
+	Thresholds DataMiningThresholds `json:"thresholds"`
 	Results []AssetMiningResults `json:"results"`
+}
+
+type DataMiningThresholds struct {
+	Range float64 `json:"range"`
+	Increment float64 `json:"increment"`
 }
 
 type AssetMiningResults struct {
@@ -230,6 +240,9 @@ func getAssetRecords(assetPath assetPath, miningConfig DataMiningConfiguration) 
 func getDataMiningTasks(assetRecords []assetRecords, miningConfig DataMiningConfiguration) []dataMiningTask {
 	accessors := getFeatureAccessors()
 	tasks := []dataMiningTask{}
+	thresholdRange := miningConfig.Thresholds.Range
+	increment := miningConfig.Thresholds.Increment
+	const epsilonLimit = 1.0 + 1e-3
 	for i, asset1 := range assetRecords {
 		if asset1.asset.FeaturesOnly || slices.Contains(miningConfig.FeaturesOnly, asset1.asset.Symbol) {
 			continue
@@ -240,10 +253,12 @@ func getDataMiningTasks(assetRecords []assetRecords, miningConfig DataMiningConf
 					if i == j && k >= l {
 						continue
 					}
-					for _, minMax1 := range miningConfig.Thresholds {
-						for _, minMax2 := range miningConfig.Thresholds {
-							threshold1 := newDataMiningThreshold(asset1, feature1, minMax1)
-							threshold2 := newDataMiningThreshold(asset2, feature2, minMax2)
+					for min1 := 0.0; min1 + thresholdRange <= epsilonLimit; min1 += increment {
+						for min2 := 0.0; min2 + thresholdRange <= epsilonLimit; min2 += increment {
+							max1 := min1 + thresholdRange
+							max2 := min2 + thresholdRange
+							threshold1 := newDataMiningThreshold(asset1, feature1, min1, max1)
+							threshold2 := newDataMiningThreshold(asset2, feature2, min2, max2)
 							task := dataMiningTask{threshold1, threshold2}
 							tasks = append(tasks, task)
 						}
@@ -292,12 +307,12 @@ func processResults(
 	return model
 }
 
-func newDataMiningThreshold(asset assetRecords, feature featureAccessor, minMax []float64) featureThreshold {
+func newDataMiningThreshold(asset assetRecords, feature featureAccessor, min float64, max float64) featureThreshold {
 	return featureThreshold{
 		asset: asset,
 		feature: feature,
-		min: minMax[0],
-		max: minMax[1],
+		min: min,
+		max: max,
 	}
 }
 
@@ -495,8 +510,11 @@ func loadDataMiningConfiguration(path string) DataMiningConfiguration {
 }
 
 func (c *DataMiningConfiguration) sanityCheck() {
-	if len(c.Thresholds) == 0 {
-		log.Fatal("No data mining thresholds were specified")
+	if c.StrategyFilter.Limit == 0 || c.StrategyFilter.Limit == 0.0 {
+		log.Fatal("Invalid strategy filter configuration")
+	}
+	if c.Thresholds.Increment == 0.0 || c.Thresholds.Range == 0.0 {
+		log.Fatal("Invalid threshold configuration")
 	}
 	if c.DateMin != nil && c.DateMax != nil && !c.DateMin.Before(c.DateMax.Time) {
 		format := "Invalid dateMin/dateMax values in data mining configuration: %s vs. %s"
@@ -544,7 +562,10 @@ func getDataMiningModel(
 		TimeMin: getTimeOfDayStringPointer(miningConfig.TimeMin),
 		TimeMax: getTimeOfDayStringPointer(miningConfig.TimeMax),
 		Weekdays: getWeekdayInts(miningConfig.Weekdays),
-		Thresholds: miningConfig.Thresholds,
+		Thresholds: DataMiningThresholds{
+			Range: miningConfig.Thresholds.Range,
+			Increment: miningConfig.Thresholds.Increment,
+		},
 		Results: []AssetMiningResults{},
 	}
 	symbols := []string{}

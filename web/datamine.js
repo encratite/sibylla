@@ -27,13 +27,14 @@ function renderDataMiningUI() {
 				className: "equityCurve",
 				onclick: () => showEquityCurve(strategyName, strategy),
 			});
-			const weekdayPlot = createElement("img", null, {
-				src: strategy.weekdayPlot,
-				className: "weekdayPlot",
-				onclick: () => showWeekdayPlot(strategyName, strategy),
-			});
+			const truncateThreshold = threshold => {
+				const precision = 100;
+				return Math.round(precision * threshold) / precision;
+			};
 			const features = strategy.features.map(feature => {
-				return `${feature.symbol}.${feature.name} (${feature.min}, ${feature.max})`;
+				const min = truncateThreshold(feature.min);
+				const max = truncateThreshold(feature.max);
+				return `${feature.symbol}.${feature.name} (${min}, ${max})`;
 			});
 			const timeOfDay = strategy.timeOfDay != null ? strategy.timeOfDay : "-";
 			const cells1 = [
