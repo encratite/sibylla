@@ -22,7 +22,6 @@ const tradingDaysPerYear = 252
 const riskAdjustedSegments = 3
 const daysPerWeek = 5
 const weekdayOptimizationBuffer = 20
-const weekdayOptimizationFrequency = 10
 
 type DataMiningConfiguration struct {
 	Assets []string `yaml:"assets"`
@@ -89,7 +88,6 @@ type dataMiningResult struct {
 	returnsSamples []float64
 	weekdayReturns [daysPerWeek][]float64
 	optimizationReturns [daysPerWeek]deque.Deque[float64]
-	optimizationCounter int
 	bannedDay *time.Weekday
 	riskAdjusted float64
 	riskAdjustedMin float64
@@ -302,6 +300,9 @@ func processResults(
 		if len(results) > miningConfig.StrategyLimit {
 			results = results[:miningConfig.StrategyLimit]
 		}
+		slices.SortFunc(assetResults[symbol], func (a, b dataMiningResult) int {
+			return compareFloat64(b.riskAdjustedRecent, a.riskAdjustedRecent)
+		})
 		assetResults[symbol] = results
 	}
 	dailyRecords := map[string][]DailyRecord{}
@@ -406,10 +407,11 @@ func onThresholdMatch(record1 *FeatureRecord, asset *Asset, results []dataMining
 			percent = factor - 1.0
 		}
 		weekdayIndex := int(record1.Timestamp.Weekday()) - 1
+		bannedDay := result.bannedDay
 		if result.optimizeWeekdays {
 			optimizeWeekdays(percent, weekdayIndex, result)
 		}
-		if result.bannedDay != nil && record1.Timestamp.Weekday() == *result.bannedDay {
+		if bannedDay != nil && record1.Timestamp.Weekday() == *bannedDay {
 			continue
 		}
 		returns := getAssetReturns(result.side, record1.Timestamp, returnsRecord.Ticks, asset)
@@ -456,7 +458,6 @@ func initializeMiningResults(task dataMiningTask, miningConfig DataMiningConfigu
 						returnsSamples: []float64{},
 						weekdayReturns: [daysPerWeek][]float64{},
 						optimizationReturns: [daysPerWeek]deque.Deque[float64]{},
-						optimizationCounter: 0,
 						bannedDay: nil,
 						cumulativeReturn: 1.0,
 						cumulativeMax: 1.0,
@@ -480,38 +481,34 @@ func optimizeWeekdays(percent float64, weekdayIndex int, result *dataMiningResul
 	for weekdayReturns.Len() > weekdayOptimizationBuffer {
 		weekdayReturns.PopFront()
 	}
-	result.optimizationCounter += 1
-	if result.optimizationCounter % weekdayOptimizationFrequency == 0 {
-		buffersFilled := true
-		for _, x := range result.optimizationReturns {
-			if x.Len() < weekdayOptimizationBuffer {
-				buffersFilled = false
-				break
+	buffersFilled := true
+	for _, x := range result.optimizationReturns {
+		if x.Len() < weekdayOptimizationBuffer {
+			buffersFilled = false
+			break
+		}
+	}
+	if buffersFilled {
+		weekdayPerformance := [daysPerWeek]float64{}
+		for k := range result.optimizationReturns {
+			performance := 1.0
+			currentWeekday := result.optimizationReturns[k]
+			for l := 0; l < currentWeekday.Len(); l++ {
+				performance *= 1.0 + currentWeekday.At(l)
+			}
+			weekdayPerformance[k] = performance
+		}
+		worstIndex := 0
+		worstPerformance := weekdayPerformance[0]
+		for k := 1; k < len(weekdayPerformance); k++ {
+			performance := weekdayPerformance[k]
+			if performance < worstPerformance {
+				worstIndex = k
+				worstPerformance = performance
 			}
 		}
-		if buffersFilled {
-			weekdayPerformance := [daysPerWeek]float64{}
-			for k := range result.optimizationReturns {
-				performance := 1.0
-				currentWeekday := result.optimizationReturns[k]
-				for l := 0; l < currentWeekday.Len(); l++ {
-					performance *= 1.0 + currentWeekday.At(l)
-				}
-				weekdayPerformance[k] = performance
-			}
-			worstIndex := 0
-			worstPerformance := weekdayPerformance[0]
-			for k := 1; k < len(weekdayPerformance); k++ {
-				performance := weekdayPerformance[k]
-				if performance < worstPerformance {
-					worstIndex = k
-					worstPerformance = performance
-				}
-			}
-			bannedDay := time.Weekday(worstIndex + 1)
-			result.bannedDay = &bannedDay
-			result.optimizationCounter = 0
-		}
+		bannedDay := time.Weekday(worstIndex + 1)
+		result.bannedDay = &bannedDay
 	}
 }
 
