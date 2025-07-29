@@ -113,7 +113,7 @@ func plotFeatureHistogram(stdDev float64, values []float64, path string) {
 	}
 }
 
-func plotWeekdayReturns(weekdayReturns [daysPerWeek][]float64, path string) {
+func plotWeekdayReturns(title string, weekdayReturns [daysPerWeek][]float64, path string) {
 	labels := []string{
 		"Mon",
 		"Tue",
@@ -133,6 +133,8 @@ func plotWeekdayReturns(weekdayReturns [daysPerWeek][]float64, path string) {
 		values[i] = mean
 	}
 	p := plot.New()
+	p.Title.Text = title
+	p.Title.Padding = vg.Points(10)
 	p.NominalX(labels...)
 	bars, err := plotter.NewBarChart(values, vg.Points(25))
 	if err != nil {

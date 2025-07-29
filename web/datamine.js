@@ -1,7 +1,7 @@
 function renderDataMiningUI() {
 	const model = getModel();
 	const container = createElement("div", document.body, {
-		className: "container-data-mine"
+		className: "containerDataMine"
 	});
 	model.results.forEach(asset => {
 		const header = createElement("h1", container);
@@ -19,7 +19,7 @@ function renderDataMiningUI() {
 			const equityCurve = createElement("img", null, {
 				src: strategy.plot,
 				className: "equityCurve",
-				onclick: () => showEquityCurve(strategyName, strategy),
+				onclick: () => showStrategyDetails(strategyName, strategy),
 			});
 			const truncateThreshold = threshold => {
 				const precision = 100;
@@ -90,33 +90,40 @@ function renderDataMiningUI() {
 	});
 }
 
-function showImage(title, src, width, height, padding) {
-	width += padding;
-	height += padding;
+function showStrategyDetails(title, strategy) {
+	const padding = 35;
+	const width = 1152 + padding;
+	const height = 1100 + padding;
 	const left = 100;
 	const top = 100;
-	const equityCurve = window.open("", "_blank", `width=${width},height=${height},left=${left},top=${top},resizable=yes`);
-	equityCurve.document.write(`
+	let linkHtml = "";
+	const links = document.querySelectorAll("link");
+	for (let i = 0; i < links.length; i++) {
+		linkHtml += links[i].outerHTML + "\n";
+	}
+	const details = window.open("", "_blank", `width=${width},height=${height},left=${left},top=${top},resizable=yes`);
+	details.document.write(`
 		<!doctype html>
 			<head>
 				<title>${title}</title>
+				${linkHtml}
 			</head>
 		</html>
 	`);
-	equityCurve.document.close();
-	const image = createElement("img", equityCurve.document.body, {
-		src: src
+	details.document.close();
+	const container = createElement("div", details.document.body, "strategyDetails");
+	const plotRow = createElement("div", container, "equityCurve");
+	createElement("img", plotRow, {
+		src: strategy.plot
+	});
+	const weekdayRow = createElement("div", container, "weekdayPlots");
+	createElement("img", weekdayRow, {
+		src: strategy.weekdayPlot
+	});
+	createElement("img", weekdayRow, {
+		src: strategy.recentPlot
 	});
 }
-
-function showEquityCurve(strategyName, strategy) {
-	showImage(`${strategyName} - Equity Curve`, strategy.plot, 1152, 768, 35);
-}
-
-function showWeekdayPlot(strategyName, strategy) {
-	showImage(`${strategyName} - Returns by Weekday`, strategy.weekdayPlot, 432, 288, 35);
-}
-
 addEventListener("DOMContentLoaded", event => {
 	renderDataMiningUI();
 });

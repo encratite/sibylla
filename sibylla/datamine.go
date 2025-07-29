@@ -22,6 +22,7 @@ const tradingDaysPerYear = 252
 const riskAdjustedSegments = 3
 const daysPerWeek = 5
 const weekdayOptimizationBuffer = 35
+const recentWeekdayPlotSamples = 100
 
 type DataMiningConfiguration struct {
 	Assets []string `yaml:"assets"`
@@ -139,6 +140,7 @@ type StrategyMiningResult struct {
 	TradesRatio float64 `json:"tradesRatio"`
 	Plot string `json:"plot"`
 	WeekdayPlot string `json:"weekdayPlot"`
+	RecentPlot string `json:"recentPlot"`
 }
 
 type StrategyFeature struct {
@@ -714,7 +716,7 @@ func getStrategyMiningResult(
 	first := equityCurve[0]
 	last := equityCurve[len(equityCurve) - 1]
 	returns := last.cash - first.cash
-	plotURL, weekdayPlotURL := createStrategyPlots(symbol, index, result)
+	plotURL, weekdayPlotURL, recentPlotURL := createStrategyPlots(symbol, index, result)
 	output := StrategyMiningResult{
 		Side: int(result.side),
 		OptimizeWeekdays: result.optimizeWeekdays,
@@ -729,6 +731,7 @@ func getStrategyMiningResult(
 		TradesRatio: result.tradesRatio,
 		Plot: plotURL,
 		WeekdayPlot: weekdayPlotURL,
+		RecentPlot: recentPlotURL,
 	}
 	if result.timeOfDay != nil {
 		timeOfDayString := getTimeOfDayString(*result.timeOfDay)
@@ -750,16 +753,28 @@ func createStrategyPlots(
 	symbol string,
 	index int,
 	result dataMiningResult,
-) (string, string) {
+) (string, string, string) {
 	plotFileName := fmt.Sprintf("%s.strategy%02d.png", symbol, index)
 	plotPath := filepath.Join(configuration.TempPath, plotFileName)
 	plotEquityCurve(result.equityCurve, plotPath)
 	weekdayPlotFilename := fmt.Sprintf("%s.strategy%02d.weekday.png", symbol, index)
 	weekdayPlotPath := filepath.Join(configuration.TempPath, weekdayPlotFilename)
-	plotWeekdayReturns(result.weekdayReturns, weekdayPlotPath)
+	plotWeekdayReturns("Mean Return by Weekday (All)", result.weekdayReturns, weekdayPlotPath)
+	recentPlotFilename := fmt.Sprintf("%s.strategy%02d.weekday.recent.png", symbol, index)
+	recentPlotPath := filepath.Join(configuration.TempPath, recentPlotFilename)
+	recentWeekDayReturns := [daysPerWeek][]float64{}
+	for i := range result.weekdayReturns {
+		truncated := result.weekdayReturns[i]
+		if len(truncated) > recentWeekdayPlotSamples {
+			truncated = truncated[len(truncated) - recentWeekdayPlotSamples:]
+		}
+		recentWeekDayReturns[i] = truncated
+	}
+	plotWeekdayReturns("Mean Return by Weekday (Recent)", recentWeekDayReturns, recentPlotPath)
 	plotURL := getFileURL(plotPath)
 	weekdayPlotURL := getFileURL(weekdayPlotPath)
-	return plotURL, weekdayPlotURL
+	recentPlotURL := getFileURL(recentPlotPath)
+	return plotURL, weekdayPlotURL, recentPlotURL
 }
 
 func getTradesRatio(
