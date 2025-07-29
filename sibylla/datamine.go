@@ -21,7 +21,7 @@ const hoursPerYear = 365.25 * 24
 const tradingDaysPerYear = 252
 const riskAdjustedSegments = 3
 const daysPerWeek = 5
-const weekdayOptimizationBuffer = 20
+const weekdayOptimizationBuffer = 35
 
 type DataMiningConfiguration struct {
 	Assets []string `yaml:"assets"`
@@ -291,6 +291,9 @@ func processResults(
 				assetResults[key] = append(assetResults[key], result)
 			}
 		}
+	}
+	if enableWeekdayAnalysis {
+		analyzeWeekdayOptimizations(assetResults)
 	}
 	for symbol := range assetResults {
 		slices.SortFunc(assetResults[symbol], func (a, b dataMiningResult) int {
