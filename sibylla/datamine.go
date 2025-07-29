@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/cheggaaa/pb"
+	"github.com/gammazero/deque"
 	"gonum.org/v1/gonum/stat"
 	"gopkg.in/yaml.v3"
 )
@@ -19,6 +20,9 @@ const dataMiningScript = "datamine.js"
 const hoursPerYear = 365.25 * 24
 const tradingDaysPerYear = 252
 const riskAdjustedSegments = 3
+const daysPerWeek = 5
+const weekdayOptimizationBuffer = 20
+const weekdayOptimizationFrequency = 10
 
 type DataMiningConfiguration struct {
 	Assets []string `yaml:"assets"`
@@ -31,7 +35,7 @@ type DataMiningConfiguration struct {
 	DateMax *SerializableDate `yaml:"dateMax"`
 	TimeMin *SerializableDuration `yaml:"timeMin"`
 	TimeMax *SerializableDuration `yaml:"timeMax"`
-	EnableWeekdays bool `yaml:"enableWeekdays"`
+	OptimizeWeekdays bool `yaml:"optimizeWeekdays"`
 	TradesMin int `yaml:"tradesMin"`
 	TradesRatio float64 `yaml:"tradesRatio"`
 	Thresholds TresholdConfiguration `yaml:"thresholds"`
@@ -79,11 +83,14 @@ type dataMiningResult struct {
 	task dataMiningTask
 	returns returnsAccessor
 	side positionSide
-	weekdayMode *time.Weekday
+	optimizeWeekdays bool
 	timeOfDay *time.Duration
 	equityCurve []equityCurveSample
 	returnsSamples []float64
-	weekdayReturns map[time.Weekday][]float64
+	weekdayReturns [daysPerWeek][]float64
+	optimizationReturns [daysPerWeek]deque.Deque[float64]
+	optimizationCounter int
+	bannedDay *time.Weekday
 	riskAdjusted float64
 	riskAdjustedMin float64
 	riskAdjustedRecent float64
@@ -104,7 +111,7 @@ type DataMiningModel struct {
 	DateMax *string `json:"dateMax"`
 	TimeMin *string `json:"timeMin"`
 	TimeMax *string `json:"timeMax"`
-	EnableWeekdays bool `json:"enableWeekdays"`
+	OptimizeWeekdays bool `json:"optimizeWeeks"`
 	Thresholds DataMiningThresholds `json:"thresholds"`
 	Results []AssetMiningResults `json:"results"`
 }
@@ -122,7 +129,7 @@ type AssetMiningResults struct {
 
 type StrategyMiningResult struct {
 	Side int `json:"side"`
-	Weekday *int `json:"weekday"`
+	OptimizeWeekdays bool `json:"optimizeWeekdays"`
 	TimeOfDay *string `json:"timeOfDay"`
 	Features []StrategyFeature `json:"features"`
 	Exit string `json:"exit"`
@@ -321,44 +328,7 @@ func newDataMiningThreshold(asset assetRecords, feature featureAccessor, min flo
 func executeDataMiningTask(task dataMiningTask, bar *pb.ProgressBar, miningConfig DataMiningConfiguration) []dataMiningResult {
 	threshold1 := &task[0]
 	threshold2 := &task[1]
-	returnsAccessors := getReturnsAccessors()
-	results := []dataMiningResult{}
-	sides := []positionSide{SideLong}
-	if miningConfig.EnableShort {
-		sides = append(sides, SideShort)
-	}
-	weekdayModes := []*time.Weekday{nil}
-	if miningConfig.EnableWeekdays {
-		for i := int(time.Monday); i <= int(time.Friday); i++ {
-			day := time.Weekday(i)
-			weekdayModes = append(weekdayModes, &day)
-		}
-	}
-	for _, returns := range returnsAccessors {
-		for _, weekdayMode := range weekdayModes {
-			for _, side := range sides {
-				for timeOfDay := miningConfig.TimeMin.Duration;
-					timeOfDay <= miningConfig.TimeMax.Duration;
-					timeOfDay += time.Duration(1) * time.Hour {
-					result := dataMiningResult{
-						task: task,
-						returns: returns,
-						side: side,
-						weekdayMode: weekdayMode,
-						timeOfDay: &timeOfDay,
-						equityCurve: []equityCurveSample{},
-						returnsSamples: []float64{},
-						weekdayReturns: map[time.Weekday][]float64{},
-						cumulativeReturn: 1.0,
-						cumulativeMax: 1.0,
-						drawdownMax: 0.0,
-						enabled: true,
-					}
-					results = append(results, result)
-				}
-			}
-		}
-	}
+	results := initializeMiningResults(task, miningConfig)
 	for i := range threshold1.asset.intradayRecords {
 		record1 := &threshold1.asset.intradayRecords[i]
 		if !record1.hasReturns() || !threshold1.match(record1) {
@@ -369,61 +339,7 @@ func executeDataMiningTask(task dataMiningTask, bar *pb.ProgressBar, miningConfi
 			continue
 		}
 		asset := &threshold1.asset.asset
-		stillWorking := false
-		for j := range results {
-			result := &results[j]
-			if !result.enabled {
-				continue
-			}
-			stillWorking = true
-			if result.timeOfDay != nil {
-				timeOfDay := getTimeOfDay(record1.Timestamp)
-				if timeOfDay != *result.timeOfDay {
-					continue
-				}
-			}
-			if result.weekdayMode != nil && *result.weekdayMode == record1.Timestamp.Weekday() {
-				continue
-			}
-			returnsRecord := result.returns.get(record1)
-			if returnsRecord == nil {
-				continue
-			}
-			cash := 0.0
-			equityCurve := &result.equityCurve
-			length := len(*equityCurve)
-			if length > 0 {
-				lastSample := &(*equityCurve)[length - 1]
-				duration := record1.Timestamp.Sub(lastSample.timestamp)
-				holdingTime := time.Duration(result.returns.holdingTime) * time.Hour
-				if duration < holdingTime {
-					continue
-				}
-				cash = lastSample.cash
-			}
-			returns := getAssetReturns(result.side, record1.Timestamp, returnsRecord.Ticks, asset)
-			cash += returns
-			sample := equityCurveSample{
-				timestamp: record1.Timestamp,
-				cash: cash,
-			}
-			*equityCurve = append(*equityCurve, sample)
-			if !math.IsNaN(returnsRecord.Percent) {
-				factor := 1.0 + returnsRecord.Percent
-				percent := returnsRecord.Percent
-				if result.side == SideShort {
-					factor = 1.0 / factor
-					percent = factor - 1.0
-				}
-				result.returnsSamples = append(result.returnsSamples, percent)
-				weekday := record1.Timestamp.Weekday()
-				result.weekdayReturns[weekday] = append(result.weekdayReturns[weekday], percent)
-				result.cumulativeReturn *= factor
-				result.cumulativeMax = max(result.cumulativeMax, result.cumulativeReturn)
-				drawdown := 1.0 - result.cumulativeReturn / result.cumulativeMax
-				result.drawdownMax = max(result.drawdownMax, drawdown)
-			}
-		}
+		stillWorking := onThresholdMatch(record1, asset, results)
 		if !stillWorking {
 			break
 		}
@@ -445,6 +361,161 @@ func executeDataMiningTask(task dataMiningTask, bar *pb.ProgressBar, miningConfi
 			}
 		}
 	}
+	postProcessMiningResults(threshold1.asset.intradayRecords, results, miningConfig)
+	bar.Increment()
+	return results
+}
+
+func onThresholdMatch(record1 *FeatureRecord, asset *Asset, results []dataMiningResult) bool {
+	stillWorking := false
+	for j := range results {
+		result := &results[j]
+		if !result.enabled {
+			continue
+		}
+		stillWorking = true
+		if result.timeOfDay != nil {
+			timeOfDay := getTimeOfDay(record1.Timestamp)
+			if timeOfDay != *result.timeOfDay {
+				continue
+			}
+		}
+		returnsRecord := result.returns.get(record1)
+		if returnsRecord == nil {
+			continue
+		}
+		if math.IsNaN(returnsRecord.Percent) {
+			continue
+		}
+		cash := 0.0
+		equityCurve := &result.equityCurve
+		length := len(*equityCurve)
+		if length > 0 {
+			lastSample := &(*equityCurve)[length - 1]
+			duration := record1.Timestamp.Sub(lastSample.timestamp)
+			holdingTime := time.Duration(result.returns.holdingTime) * time.Hour
+			if duration < holdingTime {
+				continue
+			}
+			cash = lastSample.cash
+		}
+		factor := 1.0 + returnsRecord.Percent
+		percent := returnsRecord.Percent
+		if result.side == SideShort {
+			factor = 1.0 / factor
+			percent = factor - 1.0
+		}
+		weekdayIndex := int(record1.Timestamp.Weekday()) - 1
+		if result.optimizeWeekdays {
+			optimizeWeekdays(percent, weekdayIndex, result)
+		}
+		if result.bannedDay != nil && record1.Timestamp.Weekday() == *result.bannedDay {
+			continue
+		}
+		returns := getAssetReturns(result.side, record1.Timestamp, returnsRecord.Ticks, asset)
+		cash += returns
+		sample := equityCurveSample{
+			timestamp: record1.Timestamp,
+			cash: cash,
+		}
+		*equityCurve = append(*equityCurve, sample)
+		result.returnsSamples = append(result.returnsSamples, percent)
+		result.weekdayReturns[weekdayIndex] = append(result.weekdayReturns[weekdayIndex], percent)
+		result.cumulativeReturn *= factor
+		result.cumulativeMax = max(result.cumulativeMax, result.cumulativeReturn)
+		drawdown := 1.0 - result.cumulativeReturn / result.cumulativeMax
+		result.drawdownMax = max(result.drawdownMax, drawdown)
+	}
+	return stillWorking
+}
+
+func initializeMiningResults(task dataMiningTask, miningConfig DataMiningConfiguration) []dataMiningResult {
+	results := []dataMiningResult{}
+	sides := []positionSide{SideLong}
+	if miningConfig.EnableShort {
+		sides = append(sides, SideShort)
+	}
+	optimizeWeekdaysModes := []bool{false}
+	if miningConfig.OptimizeWeekdays {
+		optimizeWeekdaysModes = append(optimizeWeekdaysModes, true)
+	}
+	returnsAccessors := getReturnsAccessors()
+	for _, returns := range returnsAccessors {
+		for _, side := range sides {
+			for _, optimizeWeekdays := range optimizeWeekdaysModes {
+				for timeOfDay := miningConfig.TimeMin.Duration;
+					timeOfDay <= miningConfig.TimeMax.Duration;
+					timeOfDay += time.Duration(1) * time.Hour {
+					result := dataMiningResult{
+						task: task,
+						returns: returns,
+						side: side,
+						optimizeWeekdays: optimizeWeekdays,
+						timeOfDay: &timeOfDay,
+						equityCurve: []equityCurveSample{},
+						returnsSamples: []float64{},
+						weekdayReturns: [daysPerWeek][]float64{},
+						optimizationReturns: [daysPerWeek]deque.Deque[float64]{},
+						optimizationCounter: 0,
+						bannedDay: nil,
+						cumulativeReturn: 1.0,
+						cumulativeMax: 1.0,
+						drawdownMax: 0.0,
+						enabled: true,
+					}
+					for i := range result.optimizationReturns {
+						result.optimizationReturns[i].SetBaseCap(weekdayOptimizationBuffer + 2)
+					}
+					results = append(results, result)
+				}
+			}
+		}
+	}
+	return results
+}
+
+func optimizeWeekdays(percent float64, weekdayIndex int, result *dataMiningResult) {
+	weekdayReturns := &result.optimizationReturns[weekdayIndex]
+	weekdayReturns.PushBack(percent)
+	for weekdayReturns.Len() > weekdayOptimizationBuffer {
+		weekdayReturns.PopFront()
+	}
+	result.optimizationCounter += 1
+	if result.optimizationCounter % weekdayOptimizationFrequency == 0 {
+		buffersFilled := true
+		for _, x := range result.optimizationReturns {
+			if x.Len() < weekdayOptimizationBuffer {
+				buffersFilled = false
+				break
+			}
+		}
+		if buffersFilled {
+			weekdayPerformance := [daysPerWeek]float64{}
+			for k := range result.optimizationReturns {
+				performance := 1.0
+				currentWeekday := result.optimizationReturns[k]
+				for l := 0; l < currentWeekday.Len(); l++ {
+					performance *= 1.0 + currentWeekday.At(l)
+				}
+				weekdayPerformance[k] = performance
+			}
+			worstIndex := 0
+			worstPerformance := weekdayPerformance[0]
+			for k := 1; k < len(weekdayPerformance); k++ {
+				performance := weekdayPerformance[k]
+				if performance < worstPerformance {
+					worstIndex = k
+					worstPerformance = performance
+				}
+			}
+			bannedDay := time.Weekday(worstIndex + 1)
+			result.bannedDay = &bannedDay
+			result.optimizationCounter = 0
+		}
+	}
+}
+
+func postProcessMiningResults(intradayRecords []FeatureRecord, results []dataMiningResult, miningConfig DataMiningConfiguration) {
 	for i := range results {
 		result := &results[i]
 		if len(result.equityCurve) < miningConfig.TradesMin {
@@ -470,14 +541,12 @@ func executeDataMiningTask(task dataMiningTask, bar *pb.ProgressBar, miningConfi
 		result.riskAdjusted = getRiskAdjusted(result.returnsSamples)
 		result.riskAdjustedMin = slices.Min(segments)
 		result.riskAdjustedRecent = segments[len(segments) - 1]
-		result.tradesRatio = getTradesRatio(result.equityCurve, threshold1.asset.intradayRecords, miningConfig)
+		result.tradesRatio = getTradesRatio(result.equityCurve, intradayRecords, miningConfig)
 		result.returnsSamples = nil
 		if result.tradesRatio < miningConfig.TradesRatio {
 			result.disable()
 		}
 	}
-	bar.Increment()
-	return results
 }
 
 func getRiskAdjusted(returnsSamples []float64) float64 {
@@ -576,7 +645,7 @@ func getDataMiningModel(
 		DateMax: getDateStringPointer(miningConfig.DateMax),
 		TimeMin: getTimeOfDayStringPointer(miningConfig.TimeMin),
 		TimeMax: getTimeOfDayStringPointer(miningConfig.TimeMax),
-		EnableWeekdays: miningConfig.EnableWeekdays,
+		OptimizeWeekdays: miningConfig.OptimizeWeekdays,
 		Thresholds: DataMiningThresholds{
 			Range: miningConfig.Thresholds.Range,
 			Increment: miningConfig.Thresholds.Increment,
@@ -648,7 +717,7 @@ func getStrategyMiningResult(
 	plotURL, weekdayPlotURL := createStrategyPlots(symbol, index, result)
 	output := StrategyMiningResult{
 		Side: int(result.side),
-		Weekday: (*int)(result.weekdayMode),
+		OptimizeWeekdays: result.optimizeWeekdays,
 		TimeOfDay: nil,
 		Features: []StrategyFeature{},
 		Exit: result.returns.name,
@@ -735,5 +804,10 @@ func (d *dataMiningResult) disable() {
 	d.enabled = false
 	d.equityCurve = nil
 	d.returnsSamples = nil
-	d.weekdayReturns = nil
+	for i := range d.weekdayReturns {
+		d.weekdayReturns[i] = nil
+	}
+	for i := range d.optimizationReturns {
+		d.optimizationReturns[i].Clear()
+	}
 }

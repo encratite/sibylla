@@ -113,7 +113,7 @@ func plotFeatureHistogram(stdDev float64, values []float64, path string) {
 	}
 }
 
-func plotWeekdayReturns(weekdayReturns map[time.Weekday][]float64, path string) {
+func plotWeekdayReturns(weekdayReturns [daysPerWeek][]float64, path string) {
 	labels := []string{
 		"Mon",
 		"Tue",
@@ -123,9 +123,9 @@ func plotWeekdayReturns(weekdayReturns map[time.Weekday][]float64, path string) 
 	}
 	values := make(plotter.Values, len(labels))
 	for i := range labels {
-		samples, exists := weekdayReturns[time.Weekday(i + 1)]
+		samples := weekdayReturns[i]
 		var mean float64
-		if exists {
+		if len(samples) > 0 {
 			mean = stat.Mean(samples, nil)
 		} else {
 			mean = 0.0
