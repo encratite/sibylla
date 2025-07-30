@@ -40,6 +40,7 @@ type DataMiningConfiguration struct {
 	TradesMin int `yaml:"tradesMin"`
 	TradesRatio float64 `yaml:"tradesRatio"`
 	Thresholds TresholdConfiguration `yaml:"thresholds"`
+	Leverage *float64 `yaml:"leverage"`
 }
 
 type StrategyFilter struct {
@@ -346,7 +347,7 @@ func executeDataMiningTask(task dataMiningTask, bar *pb.ProgressBar, miningConfi
 			continue
 		}
 		asset := &threshold1.asset.asset
-		stillWorking := onThresholdMatch(record1, asset, results)
+		stillWorking := onThresholdMatch(record1, asset, results, miningConfig)
 		if !stillWorking {
 			break
 		}
@@ -373,7 +374,12 @@ func executeDataMiningTask(task dataMiningTask, bar *pb.ProgressBar, miningConfi
 	return results
 }
 
-func onThresholdMatch(record1 *FeatureRecord, asset *Asset, results []dataMiningResult) bool {
+func onThresholdMatch(
+	record1 *FeatureRecord,
+	asset *Asset,
+	results []dataMiningResult,
+	miningConfig DataMiningConfiguration,
+) bool {
 	stillWorking := false
 	for j := range results {
 		result := &results[j]
@@ -420,7 +426,11 @@ func onThresholdMatch(record1 *FeatureRecord, asset *Asset, results []dataMining
 		if bannedDay != nil && record1.Timestamp.Weekday() == *bannedDay {
 			continue
 		}
-		returns := getAssetReturns(result.side, record1.Timestamp, returnsRecord.Ticks, true, asset)
+		ticks := returnsRecord.Ticks
+		if miningConfig.Leverage != nil {
+			ticks = int(*miningConfig.Leverage * float64(ticks))
+		}
+		returns := getAssetReturns(result.side, record1.Timestamp, ticks, true, asset)
 		cash += returns
 		sample := equityCurveSample{
 			timestamp: record1.Timestamp,
