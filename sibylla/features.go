@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"slices"
+	"strings"
 )
 
 const enableFeatureAnalysis = true
@@ -21,7 +22,7 @@ type combinedFeatureStats struct {
 	count int
 }
 
-func analyzeFeatureFrequency(assetResults map[string][]dataMiningResult) {
+func analyzeFeatureFrequency(assetResults map[string][]dataMiningResult, miningConfig DataMiningConfiguration) {
 	if !enableFeatureAnalysis {
 		return
 	}
@@ -105,6 +106,8 @@ func analyzeFeatureFrequency(assetResults map[string][]dataMiningResult) {
 		percentage := 100.0 * float64(cominbedFeature.count) / float64(combinedFeaturesTotal)
 		fmt.Printf("\t%d. %s, %s: %.1f%%\n", i + 1, cominbedFeature.names[0], cominbedFeature.names[1], percentage)
 	}
-	fmt.Printf("\nNumber of strategies evaluated per asset: %d\n\n", featureAnalysisLimit)
+	fmt.Printf("\nNumber of strategies evaluated per asset: %d\n", featureAnalysisLimit)
+	symbolsEvaluated := strings.Join(miningConfig.Assets, ", ")
+	fmt.Printf("Symbols evaluated: %s\n\n", symbolsEvaluated)
 	log.Fatal("Analysis concluded")
 }

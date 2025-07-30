@@ -298,7 +298,7 @@ func processResults(
 		}
 	}
 	analyzeWeekdayOptimizations(assetResults)
-	analyzeFeatureFrequency(assetResults)
+	analyzeFeatureFrequency(assetResults, miningConfig)
 	for symbol := range assetResults {
 		slices.SortFunc(assetResults[symbol], func (a, b dataMiningResult) int {
 			return compareFloat64(b.riskAdjustedMin, a.riskAdjustedMin)
