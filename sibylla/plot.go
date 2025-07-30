@@ -25,19 +25,35 @@ func plotDailyRecords(records []DailyRecord, path string) {
 		plotterData[i].X = timeToFloat(record.Date)
 		plotterData[i].Y = record.Close
 	}
-	plotLine("Close", plotterData, false, path)
+	plotLine("Close", plotterData, nil, false, path)
 }
 
-func plotEquityCurve(equityCurve []equityCurveSample, path string) {
+func plotEquityCurve(
+	equityCurve []equityCurveSample,
+	buyAndHold []equityCurveSample,
+	path string,
+) {
+	plotterData1 := getEquityPlotterData(equityCurve)
+	plotterData2 := getEquityPlotterData(buyAndHold)
+	plotLine("Money", plotterData1, &plotterData2, true, path)
+}
+
+func getEquityPlotterData(equityCurve []equityCurveSample) plotter.XYs {
 	plotterData := make(plotter.XYs, len(equityCurve))
 	for i, sample := range equityCurve {
 		plotterData[i].X = timeToFloat(sample.timestamp)
 		plotterData[i].Y = sample.cash
 	}
-	plotLine("Money", plotterData, true, path)
+	return plotterData
 }
 
-func plotLine(yLabel string, plotterData plotter.XYs, money bool, path string) {
+func plotLine(
+	yLabel string,
+	plotterData1 plotter.XYs,
+	plotterData2 *plotter.XYs,
+	money bool,
+	path string,
+) {
 	ttfData := readFile(configuration.FontPath)
 	openTypeFont, err := opentype.Parse(ttfData)
 	if err != nil {
@@ -68,12 +84,20 @@ func plotLine(yLabel string, plotterData plotter.XYs, money bool, path string) {
 	if money {
 		p.Y.Tick.Marker = MoneyTicks{}
 	}
-	line, err := plotter.NewLine(plotterData)
+	line1, err := plotter.NewLine(plotterData1)
 	if err != nil {
 		log.Fatal("Failed to create line plot:", err)
 	}
-	line.LineStyle.Color = color.RGBA{R: 255, A: 255}
-	p.Add(line)
+	line1.LineStyle.Color = color.RGBA{R: 255, G: 0, B: 0, A: 255}
+	if plotterData2 != nil {
+		line2, err := plotter.NewLine(plotterData2)
+		if err != nil {
+			log.Fatal("Failed to create line plot:", err)
+		}
+		line2.LineStyle.Color = color.RGBA{R: 79, G: 129, B: 189, A: 255}
+		p.Add(line2)
+	}
+	p.Add(line1)
 	err = p.Save(12 * vg.Inch, 8 * vg.Inch, path)
 	if err != nil {
 		log.Fatalf("Failed to save plot (%s): %v", path, err)

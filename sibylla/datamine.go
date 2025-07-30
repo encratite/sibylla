@@ -23,6 +23,7 @@ const riskAdjustedSegments = 3
 const daysPerWeek = 5
 const weekdayOptimizationBuffer = 35
 const recentWeekdayPlotSamples = 100
+const buyAndHoldTimeOfDay = 12
 
 type DataMiningConfiguration struct {
 	Assets []string `yaml:"assets"`
@@ -316,7 +317,7 @@ func processResults(
 		dailyRecords[key] = records.dailyRecords
 	}
 	clearDirectory(configuration.TempPath)
-	model := getDataMiningModel(assetResults, dailyRecords, miningConfig)
+	model := getDataMiningModel(assetResults, dailyRecords, assetRecords, miningConfig)
 	delta := time.Since(start)
 	fmt.Printf("Finished post-processing results in %.2f s\n", delta.Seconds())
 	return model
@@ -419,7 +420,7 @@ func onThresholdMatch(record1 *FeatureRecord, asset *Asset, results []dataMining
 		if bannedDay != nil && record1.Timestamp.Weekday() == *bannedDay {
 			continue
 		}
-		returns := getAssetReturns(result.side, record1.Timestamp, returnsRecord.Ticks, asset)
+		returns := getAssetReturns(result.side, record1.Timestamp, returnsRecord.Ticks, true, asset)
 		cash += returns
 		sample := equityCurveSample{
 			timestamp: record1.Timestamp,
@@ -557,19 +558,23 @@ func getRiskAdjusted(returnsSamples []float64) float64 {
 	return riskAdjusted
 }
 
-func getAssetReturns(side positionSide, timestamp time.Time, ticks int, asset *Asset) float64 {
-	if side == SideLong {
-		ticks -= asset.Spread
-	} else {
-		ticks += asset.Spread
+func getAssetReturns(side positionSide, timestamp time.Time, ticks int, enableFees bool, asset *Asset) float64 {
+	if enableFees {
+		if side == SideLong {
+			ticks -= asset.Spread
+		} else {
+			ticks += asset.Spread
+		}
 	}
 	rawGains := float64(ticks) * asset.TickValue
 	gains := convertCurrency(timestamp, rawGains, asset.Currency)
 	if side == SideShort {
 		gains = - gains
 	}
-	fees := asset.BrokerFee + asset.ExchangeFee
-	gains -= fees
+	if enableFees {
+		fees := asset.BrokerFee + asset.ExchangeFee
+		gains -= fees
+	}
 	return gains
 }
 
@@ -640,6 +645,7 @@ func (c *DataMiningConfiguration) isValidTime(timestamp time.Time) bool {
 func getDataMiningModel(
 	assetResults map[string][]dataMiningResult,
 	dailyRecords map[string][]DailyRecord,
+	assetRecords []assetRecords,
 	miningConfig DataMiningConfiguration,
 ) DataMiningModel {
 	model := DataMiningModel{
@@ -675,8 +681,9 @@ func getDataMiningModel(
 			Plot: getFileURL(dailyRecordsPlotPath),
 			Strategies: []StrategyMiningResult{},
 		}
+		buyAndHold := getBuyAndHold(symbol, assetRecords)
 		for i, result := range results {
-			miningResult := getStrategyMiningResult(symbol, i + 1, result)
+			miningResult := getStrategyMiningResult(symbol, i + 1, result, buyAndHold)
 			assetMiningResults.Strategies = append(assetMiningResults.Strategies, miningResult)
 		}
 		return assetMiningResults
@@ -711,12 +718,13 @@ func getStrategyMiningResult(
 	symbol string,
 	index int,
 	result dataMiningResult,
+	buyAndHold []equityCurveSample,
 ) StrategyMiningResult {
 	equityCurve := result.equityCurve
 	first := equityCurve[0]
 	last := equityCurve[len(equityCurve) - 1]
 	returns := last.cash - first.cash
-	plotURL, weekdayPlotURL, recentPlotURL := createStrategyPlots(symbol, index, result)
+	plotURL, weekdayPlotURL, recentPlotURL := createStrategyPlots(symbol, index, result, buyAndHold)
 	output := StrategyMiningResult{
 		Side: int(result.side),
 		OptimizeWeekdays: result.optimizeWeekdays,
@@ -753,10 +761,11 @@ func createStrategyPlots(
 	symbol string,
 	index int,
 	result dataMiningResult,
+	buyAndHold []equityCurveSample,
 ) (string, string, string) {
 	plotFileName := fmt.Sprintf("%s.strategy%02d.png", symbol, index)
 	plotPath := filepath.Join(configuration.TempPath, plotFileName)
-	plotEquityCurve(result.equityCurve, plotPath)
+	plotEquityCurve(result.equityCurve, buyAndHold, plotPath)
 	weekdayPlotFilename := fmt.Sprintf("%s.strategy%02d.weekday.png", symbol, index)
 	weekdayPlotPath := filepath.Join(configuration.TempPath, weekdayPlotFilename)
 	plotWeekdayReturns("Mean Return by Weekday (All)", result.weekdayReturns, weekdayPlotPath)
@@ -825,4 +834,29 @@ func (d *dataMiningResult) disable() {
 	for i := range d.optimizationReturns {
 		d.optimizationReturns[i].Clear()
 	}
+}
+
+func getBuyAndHold(symbol string, allRecords []assetRecords) []equityCurveSample {
+	equityCurve := []equityCurveSample{}
+	cash := 0.0
+	index := slices.IndexFunc(allRecords, func (x assetRecords) bool {
+		return x.asset.Symbol == symbol
+	})
+	if index == -1 {
+		log.Fatalf("Failed to find matching asset records for buy and hold symbol %s", symbol)
+	}
+	records := allRecords[index]
+	for _, record := range records.intradayRecords {
+		if record.Timestamp.Hour() != buyAndHoldTimeOfDay || record.Returns24H == nil {
+			continue
+		}
+		returns := getAssetReturns(SideLong, record.Timestamp, record.Returns24H.Ticks, false, &records.asset)
+		cash += returns
+		sample := equityCurveSample{
+			timestamp: record.Timestamp,
+			cash: cash,
+		}
+		equityCurve = append(equityCurve, sample)
+	}
+	return equityCurve
 }
