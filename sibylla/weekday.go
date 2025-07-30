@@ -23,6 +23,9 @@ type weekdayOptimizationStats struct {
 }
 
 func analyzeWeekdayOptimizations(assetResults map[string][]dataMiningResult) {
+	if !enableWeekdayAnalysis {
+		return
+	}
 	all := newWeekdayCategory("All")
 	categories := []weekdayOptimizationCategory{}
 	for symbol, results := range assetResults {

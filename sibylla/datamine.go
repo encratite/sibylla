@@ -28,6 +28,7 @@ const buyAndHoldTimeOfDay = 12
 type DataMiningConfiguration struct {
 	Assets []string `yaml:"assets"`
 	FeaturesOnly []string `yaml:"featuresOnly"`
+	EnableLong bool `yaml:"enableLong"`
 	EnableShort bool `yaml:"enableShort"`
 	StrategyLimit int `yaml:"strategyLimit"`
 	StrategyFilter *StrategyFilter `yaml:"strategyFilter"`
@@ -296,9 +297,8 @@ func processResults(
 			}
 		}
 	}
-	if enableWeekdayAnalysis {
-		analyzeWeekdayOptimizations(assetResults)
-	}
+	analyzeWeekdayOptimizations(assetResults)
+	analyzeFeatureFrequency(assetResults)
 	for symbol := range assetResults {
 		slices.SortFunc(assetResults[symbol], func (a, b dataMiningResult) int {
 			return compareFloat64(b.riskAdjustedMin, a.riskAdjustedMin)
@@ -307,7 +307,7 @@ func processResults(
 		if len(results) > miningConfig.StrategyLimit {
 			results = results[:miningConfig.StrategyLimit]
 		}
-		slices.SortFunc(assetResults[symbol], func (a, b dataMiningResult) int {
+		slices.SortFunc(results, func (a, b dataMiningResult) int {
 			return compareFloat64(b.riskAdjustedRecent, a.riskAdjustedRecent)
 		})
 		assetResults[symbol] = results
@@ -426,11 +426,10 @@ func onThresholdMatch(
 		if bannedDay != nil && record1.Timestamp.Weekday() == *bannedDay {
 			continue
 		}
-		ticks := returnsRecord.Ticks
+		returns := getAssetReturns(result.side, record1.Timestamp, returnsRecord.Ticks, true, asset)
 		if miningConfig.Leverage != nil {
-			ticks = int(*miningConfig.Leverage * float64(ticks))
+			returns *= *miningConfig.Leverage
 		}
-		returns := getAssetReturns(result.side, record1.Timestamp, ticks, true, asset)
 		cash += returns
 		sample := equityCurveSample{
 			timestamp: record1.Timestamp,
@@ -449,7 +448,10 @@ func onThresholdMatch(
 
 func initializeMiningResults(task dataMiningTask, miningConfig DataMiningConfiguration) []dataMiningResult {
 	results := []dataMiningResult{}
-	sides := []positionSide{SideLong}
+	sides := []positionSide{}
+	if miningConfig.EnableLong {
+		sides = append(sides, SideLong)
+	}
 	if miningConfig.EnableShort {
 		sides = append(sides, SideShort)
 	}
