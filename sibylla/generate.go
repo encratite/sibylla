@@ -9,8 +9,6 @@ import (
 	"sort"
 	"strconv"
 	"time"
-
-	"gonum.org/v1/gonum/stat"
 )
 
 const returnsLimit = 100000
@@ -210,8 +208,6 @@ func processIntradayTimestamp(
 		Momentum5D: momentumHelper(5, 0, 0),
 		Momentum10D: momentumHelper(10, 0, 0),
 		Momentum8H: momentumHelper(0, 0, 8),
-		Volatility10D: getVolatility(10, timestamp, symbol, dailyCloses),
-		Volatility20D: getVolatility(20, timestamp, symbol, dailyCloses),
 		Returns24H: returnsHelper(1, 0),
 		Returns48H: returnsHelper(2, 0),
 		Returns72H: returnsHelper(3, 0),
@@ -262,39 +258,6 @@ func getMomentum(
 		return nil
 	}
 	return &momentum
-}
-
-func getVolatility(
-	days int,
-	timestamp time.Time,
-	symbol GlobexCode,
-	dailyCloses dailyCloseMap,
-) *float64 {
-	closes := make([]float64, 0, days)
-	failed := 0
-	for len(closes) < days {
-		timestamp = getAdjustedTimestamp(-1, 0, timestamp)
-		key := getGlobexDateKey(symbol, timestamp)
-		close, exists := dailyCloses[key]
-		if !exists {
-			failed++
-			if failed >= 10 {
-				return nil
-			}
-			continue
-		}
-		closes = append(closes, close)
-	}
-	returns := make([]float64, 0, len(closes) - 1)
-	for i := 0; i < len(closes) - 1; i++ {
-		value, success := getRateOfChange(closes[i], closes[i + 1])
-		if !success {
-			return nil
-		}
-		returns = append(returns, value)
-	}
-	volatility := stat.StdDev(returns, nil)
-	return &volatility
 }
 
 func getReturns(
@@ -476,8 +439,6 @@ func (f *FeatureRecord) includeRecord() bool {
 		f.Momentum5D,
 		f.Momentum10D,
 		f.Momentum8H,
-		f.Volatility10D,
-		f.Volatility20D,
 	}
 	for _, x := range features {
 		if x != nil {
