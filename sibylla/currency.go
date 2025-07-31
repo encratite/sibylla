@@ -56,7 +56,7 @@ func convertCurrency(timestamp time.Time, amount float64, symbol string) float64
 	}
 	for _, currencyMap := range *currencies {
 		if currencyMap.symbol == symbol {
-			for i := 0; i < 50; i++ {
+			for i := 0; i < 100; i++ {
 				close, exists := currencyMap.records[timestamp]
 				if exists {
 					converted := close * amount

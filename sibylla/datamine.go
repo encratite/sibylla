@@ -42,6 +42,7 @@ type DataMiningConfiguration struct {
 	TradesRatio float64 `yaml:"tradesRatio"`
 	Thresholds TresholdConfiguration `yaml:"thresholds"`
 	Leverage *float64 `yaml:"leverage"`
+	SingleFeature bool `yaml:"singleFeature"`
 }
 
 type StrategyFilter struct {
@@ -266,6 +267,7 @@ func getDataMiningTasks(assetRecords []assetRecords, miningConfig DataMiningConf
 	thresholdRange := miningConfig.Thresholds.Range
 	increment := miningConfig.Thresholds.Increment
 	const epsilonLimit = 1.0 + 1e-3
+	singleFeature := miningConfig.SingleFeature
 	for i, asset1 := range assetRecords {
 		if asset1.asset.FeaturesOnly || slices.Contains(miningConfig.FeaturesOnly, asset1.asset.Symbol) {
 			continue
@@ -273,11 +275,17 @@ func getDataMiningTasks(assetRecords []assetRecords, miningConfig DataMiningConf
 		for j, asset2 := range assetRecords {
 			for k, feature1 := range accessors {
 				for l, feature2 := range accessors {
-					if i == j && k >= l {
+					if !singleFeature && i == j && k >= l {
+						continue
+					}
+					if singleFeature && (i != j || k != l) {
 						continue
 					}
 					for min1 := 0.0; min1 + thresholdRange <= epsilonLimit; min1 += increment {
 						for min2 := 0.0; min2 + thresholdRange <= epsilonLimit; min2 += increment {
+							if singleFeature && min1 != min2 {
+								continue
+							}
 							max1 := min1 + thresholdRange
 							max2 := min2 + thresholdRange
 							threshold1 := newDataMiningThreshold(asset1, feature1, min1, max1)

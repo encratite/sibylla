@@ -30,8 +30,6 @@ type FeatureRecord struct {
 	Momentum5D *float64
 	Momentum10D *float64
 	Momentum8H *float64
-	Volatility10D *float64
-	Volatility20D *float64
 	Returns24H *ReturnsRecord
 	Returns48H *ReturnsRecord
 	Returns72H *ReturnsRecord
@@ -157,24 +155,6 @@ func getFeatureAccessors() []featureAccessor {
 			},
 			set: func (f *FeatureRecord, x float64) {
 				f.Momentum8H = &x
-			},
-		},
-		{
-			name: "volatility10D",
-			get: func (f *FeatureRecord) *float64 {
-				return f.Volatility10D
-			},
-			set: func (f *FeatureRecord, x float64) {
-				f.Volatility10D = &x
-			},
-		},
-		{
-			name: "volatility20D",
-			get: func (f *FeatureRecord) *float64 {
-				return f.Volatility20D
-			},
-			set: func (f *FeatureRecord, x float64) {
-				f.Volatility20D = &x
 			},
 		},
 	}

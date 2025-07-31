@@ -32,6 +32,8 @@ function renderDataMiningUI() {
 				const max = truncateThreshold(feature.max);
 				return `${feature.symbol}.${feature.name} (${min}, ${max})`;
 			});
+			const feature1 = features[0];
+			const feature2 = features[0] !== features[1] ? features[1] : "-";
 			const side = strategy.side === 0 ? "Long" : "Short";
 			let options = [];
 			if (strategy.optimizeWeekdays === true) {
@@ -47,8 +49,8 @@ function renderDataMiningUI() {
 			const holdingTimeHours = parseInt(holdingTimeMatch[0]);
 			const holdingTime = `${holdingTimeHours}h`;
 			const cells1 = [
-				["Feature 1", features[0], false],
-				["Feature 2", features[1], false],
+				["Feature 1", feature1, false],
+				["Feature 2", feature2, false],
 				["Side", side, false],
 				["Entry", timeOfDay, false],
 				["Holding Time", holdingTime, false],
