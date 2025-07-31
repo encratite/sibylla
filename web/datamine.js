@@ -108,7 +108,7 @@ function renderFeatures(features, container) {
 		const table = createElement("table", innerContainer);
 		const headerRow = createElement("tr", table);
 		const headers = [
-			"Feature",
+			`Feature ${featureIndex + 1}`,
 			"Frequency",
 		];
 		headers.forEach(header => {
