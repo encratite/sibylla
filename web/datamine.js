@@ -3,6 +3,8 @@ function renderDataMiningUI() {
 	const container = createElement("div", document.body, {
 		className: "containerDataMine"
 	});
+	const featuresContainer = createElement("div", container);
+	renderFeatures(model.features, featuresContainer);
 	model.results.forEach(asset => {
 		const header = createElement("h1", container);
 		header.textContent = `${asset.symbol} (${asset.strategies.length} Strategies)`;
@@ -15,7 +17,7 @@ function renderDataMiningUI() {
 			const getRiskAdjusted = (description, property) => {
 				return [description, property.toFixed(3), true];
 			};
-			let strategyName = `${asset.symbol} #${index + 1}`;
+			let strategyName = `${asset.symbol} Strategy #${index + 1}`;
 			const equityCurve = createElement("img", null, {
 				src: strategy.plot,
 				className: "equityCurve",
@@ -31,11 +33,12 @@ function renderDataMiningUI() {
 				return `${feature.symbol}.${feature.name} (${min}, ${max})`;
 			});
 			const side = strategy.side === 0 ? "Long" : "Short";
-			const options = [
-				side
-			];
+			let options = [];
 			if (strategy.optimizeWeekdays === true) {
-				options.push("weekday optimization");
+				options.push("Weekday optimization");
+			}
+			if (options.length === 0) {
+				options.push("-");
 			}
 			const optionsString = options.join(", ");
 			const timeOfDay = strategy.timeOfDay != null ? strategy.timeOfDay : "-";
@@ -44,12 +47,12 @@ function renderDataMiningUI() {
 			const holdingTimeHours = parseInt(holdingTimeMatch[0]);
 			const holdingTime = `${holdingTimeHours}h`;
 			const cells1 = [
-				["Strategy", strategyName, false],
 				["Feature 1", features[0], false],
 				["Feature 2", features[1], false],
-				["Options", optionsString, false],
+				["Side", side, false],
 				["Entry", timeOfDay, false],
 				["Holding Time", holdingTime, false],
+				["Options", optionsString, false],
 			];
 			const cells2 = [
 				["Returns", formatMoney(strategy.returns), true],
@@ -75,6 +78,11 @@ function renderDataMiningUI() {
 					contentCell.appendChild(content);
 				}
 			};
+			const firstRow = createElement("tr", table);
+			createElement("th", firstRow, {
+				textContent: strategyName,
+				colSpan: 4
+			});
 			for (let i = 0; i < cells1.length; i++) {
 				const row = createElement("tr", table);
 				renderCell(cells1[i], row);
@@ -88,6 +96,96 @@ function renderDataMiningUI() {
 			equityCurveCell.appendChild(equityCurve);
 		});
 	});
+}
+
+function renderFeatures(features, container) {
+	const header = createElement("h1", container);
+	header.textContent = "Features";
+	const innerContainer = createElement("div", container, "features");
+	renderFeatureHeatmap(features, innerContainer);
+	const featureSlots = features.features[0].frequencies.length;
+	for (let featureIndex = 0; featureIndex < featureSlots; featureIndex++) {
+		const table = createElement("table", innerContainer);
+		const headerRow = createElement("tr", table);
+		const headers = [
+			"Feature",
+			"Frequency",
+		];
+		headers.forEach(header => {
+			const cell = createElement("th", headerRow);
+			cell.textContent = header;
+		});
+		features.features.sort((a, b) => {
+			return b.frequencies[featureIndex] - a.frequencies[featureIndex];
+		});
+		features.features.forEach(f => {
+			const frequency = f.frequencies[featureIndex];
+			const row = createElement("tr", table);
+			const cell1 = createElement("td", row);
+			cell1.textContent = f.name;
+			const cell2 = createElement("td", row);
+			cell2.textContent = getPercentage(frequency, 1);
+		});
+	}
+}
+
+function renderFeatureHeatmap(features, container) {
+	const names = features.features.map(x => x.name);
+	const xValues = names;
+	const yValues = names;
+	const zValues = features.combinations;
+	const featureCount = names.length;
+	const textData = [];
+	for (let x = 0; x < featureCount; x++) {
+		const row = [];
+		for (let y = 0; y < featureCount; y++) {
+			const value = features.combinations[x][y];
+			const percentage = getPercentage(value, 1);
+			row.push(percentage)
+		}
+		textData.push(row);
+	}
+	const data = [{
+		x: xValues,
+		y: yValues,
+		z: zValues,
+		type: "heatmap",
+		colorscale: "Viridis",
+		text: textData,
+		texttemplate: "%{text}",
+		hoverinfo: "skip",
+		showscale: true,
+		colorbar: {
+			tickformat: ".0%"
+		},
+	}];
+	const layout = {
+		title: {
+			text: "Frequency of Combinations",
+			font: {
+				size: 18
+			},
+		},
+		font: {
+			family: "Roboto",
+			size: 14,
+		},
+		width: 700,
+		margin: {
+			t: 40,
+			b: 100,
+			l: 120,
+			r: 50
+		}
+	};
+	const config = {
+		displayModeBar: false
+	};
+	const id = "featureHeatmap";
+	createElement("div", container, {
+		id: id
+	});
+	Plotly.newPlot(id, data, layout, config);
 }
 
 function showStrategyDetails(title, strategy) {
@@ -124,6 +222,7 @@ function showStrategyDetails(title, strategy) {
 		src: strategy.recentPlot
 	});
 }
+
 addEventListener("DOMContentLoaded", event => {
 	renderDataMiningUI();
 });

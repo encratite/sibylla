@@ -116,6 +116,7 @@ type DataMiningModel struct {
 	OptimizeWeekdays bool `json:"optimizeWeeks"`
 	Thresholds DataMiningThresholds `json:"thresholds"`
 	Results []AssetMiningResults `json:"results"`
+	Features FeatureAnalysis `json:"features"`
 }
 
 type DataMiningThresholds struct {
@@ -151,6 +152,16 @@ type StrategyFeature struct {
 	Name string `json:"name"`
 	Min float64 `json:"min"`
 	Max float64 `json:"max"`
+}
+
+type FeatureFrequency struct {
+	Name string `json:"name"`
+	Frequencies []float64 `json:"frequencies"`
+}
+
+type FeatureAnalysis struct {
+	Features []FeatureFrequency `json:"features"`
+	Combinations [][]float64 `json:"combinations"`
 }
 
 func DataMine(yamlPath string) {
@@ -298,7 +309,7 @@ func processResults(
 		}
 	}
 	analyzeWeekdayOptimizations(assetResults)
-	analyzeFeatureFrequency(assetResults, miningConfig)
+	analysis := analyzeFeatureFrequency(assetResults, miningConfig)
 	for symbol := range assetResults {
 		slices.SortFunc(assetResults[symbol], func (a, b dataMiningResult) int {
 			return compareFloat64(b.riskAdjustedMin, a.riskAdjustedMin)
@@ -318,7 +329,7 @@ func processResults(
 		dailyRecords[key] = records.dailyRecords
 	}
 	clearDirectory(configuration.TempPath)
-	model := getDataMiningModel(assetResults, dailyRecords, assetRecords, miningConfig)
+	model := getDataMiningModel(assetResults, dailyRecords, assetRecords, analysis, miningConfig)
 	delta := time.Since(start)
 	fmt.Printf("Finished post-processing results in %.2f s\n", delta.Seconds())
 	return model
@@ -658,8 +669,10 @@ func getDataMiningModel(
 	assetResults map[string][]dataMiningResult,
 	dailyRecords map[string][]DailyRecord,
 	assetRecords []assetRecords,
+	analysis featureAnalysis,
 	miningConfig DataMiningConfiguration,
 ) DataMiningModel {
+	features := getFeatureModel(analysis)
 	model := DataMiningModel{
 		DateMin: getDateStringPointer(miningConfig.DateMin),
 		DateMax: getDateStringPointer(miningConfig.DateMax),
@@ -671,6 +684,7 @@ func getDataMiningModel(
 			Increment: miningConfig.Thresholds.Increment,
 		},
 		Results: []AssetMiningResults{},
+		Features: features,
 	}
 	symbols := []string{}
 	for symbol := range assetResults {

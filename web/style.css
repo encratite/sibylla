@@ -62,11 +62,20 @@
 		width: 730px;
 	}
 
-	td {
+	th {
+		color: white;
+		background-color: black;
+	}
+
+	th, td {
 		vertical-align: top;
 		border: 1px solid black;
 		padding-left: 4px;
 		padding-right: 4px;
+	}
+
+	tr:nth-child(2n + 1) td {
+		background-color: #e0e0e0;
 	}
 
 	img {
@@ -80,6 +89,7 @@
 
 	.description {
 		font-weight: bold;
+		width: 130px;
 	}
 
 	.numeric {
@@ -111,5 +121,39 @@
 
 	img {
 		display: block;
+	}
+}
+
+.features {
+	display: flex;
+	align-items: flex-start;
+	justify-content: flex-start;
+	gap: 20px;
+	padding-bottom: 40px;
+
+	table {
+		border-collapse: collapse;
+		border-spacing: 0;
+		margin-top: 40px;
+		margin-right: 20px;
+	}
+
+	th, td {
+		padding: 2px 8px 2px 8px;
+		border: 1px solid black;
+	}
+
+	th {
+		text-align: left;
+		color: white;
+		background-color: black;
+	}
+
+	td:nth-child(2) {
+		text-align: right;
+	}
+
+	tr:nth-child(2n + 1) td {
+		background-color: #e0e0e0;
 	}
 }

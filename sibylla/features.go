@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-const enableFeatureAnalysis = true
+const enableFeatureAnalysis = false
 const featureAnalysisLimit = 250
 const combinedFeatureLimit = 20
 
@@ -22,10 +22,13 @@ type combinedFeatureStats struct {
 	count int
 }
 
-func analyzeFeatureFrequency(assetResults map[string][]dataMiningResult, miningConfig DataMiningConfiguration) {
-	if !enableFeatureAnalysis {
-		return
-	}
+type featureAnalysis struct {
+	features []featureStats
+	combinedFeatures []combinedFeatureStats
+	combinedFeaturesTotal int
+}
+
+func analyzeFeatureFrequency(assetResults map[string][]dataMiningResult, miningConfig DataMiningConfiguration) featureAnalysis {
 	accessors := getFeatureAccessors()
 	features := []featureStats{}
 	for _, accessor := range accessors {
@@ -79,35 +82,92 @@ func analyzeFeatureFrequency(assetResults map[string][]dataMiningResult, miningC
 			combinedFeaturesTotal++
 		}
 	}
+	analysis := featureAnalysis{
+		features: features,
+		combinedFeatures: combinedFeatures,
+		combinedFeaturesTotal: combinedFeaturesTotal,
+	}
+	if enableFeatureAnalysis {
+		printFeatureFrequency(analysis, miningConfig)
+	}
+	return analysis
+}
+
+func printFeatureFrequency(analysis featureAnalysis, miningConfig DataMiningConfiguration) {
+	features := analysis.features
+	combinedFeatures := analysis.combinedFeatures
 	fmt.Println("")
 	for featureIndex := 0; featureIndex < 2; featureIndex++ {
-		slices.SortFunc(features, func (a, b featureStats) int {
+		sortedFeatures := make([]featureStats, len(features))
+		copy(sortedFeatures, features)
+		slices.SortFunc(sortedFeatures, func (a, b featureStats) int {
 			return cmp.Compare(b.counts[featureIndex], a.counts[featureIndex])
 		})
 		fmt.Printf("Feature %d:\n", featureIndex + 1)
 		total := 0
-		for _, feature := range features {
+		for _, feature := range sortedFeatures {
 			total += feature.counts[featureIndex]
 		}
-		for i, feature := range features {
+		for i, feature := range sortedFeatures {
 			percentage := 100.0 * float64(feature.counts[featureIndex]) / float64(total)
 			fmt.Printf("\t%d. %s: %.1f%%\n", i + 1, feature.name, percentage)
 		}
 		fmt.Println("")
 	}
-	slices.SortFunc(combinedFeatures, func (a, b combinedFeatureStats) int {
+	sortedCombinedFeatures := make([]combinedFeatureStats, len(combinedFeatures))
+	copy(sortedCombinedFeatures, combinedFeatures)
+	slices.SortFunc(sortedCombinedFeatures, func (a, b combinedFeatureStats) int {
 		return cmp.Compare(b.count, a.count)
 	})
 	fmt.Println("Combined features:")
-	for i, cominbedFeature := range combinedFeatures {
+	for i, cominbedFeature := range sortedCombinedFeatures {
 		if i >= combinedFeatureLimit {
 			break
 		}
-		percentage := 100.0 * float64(cominbedFeature.count) / float64(combinedFeaturesTotal)
+		percentage := 100.0 * float64(cominbedFeature.count) / float64(analysis.combinedFeaturesTotal)
 		fmt.Printf("\t%d. %s, %s: %.1f%%\n", i + 1, cominbedFeature.names[0], cominbedFeature.names[1], percentage)
 	}
 	fmt.Printf("\nNumber of strategies evaluated per asset: %d\n", featureAnalysisLimit)
 	symbolsEvaluated := strings.Join(miningConfig.Assets, ", ")
 	fmt.Printf("Symbols evaluated: %s\n\n", symbolsEvaluated)
 	log.Fatal("Analysis concluded")
+}
+
+func getFeatureModel(analysis featureAnalysis) FeatureAnalysis {
+	features := analysis.features
+	combinedFeatures := analysis.combinedFeatures
+	featureFrequencies := []FeatureFrequency{}
+	for _, f := range features {
+		feature := FeatureFrequency{
+			Name: f.name,
+		}
+		featureFrequencies = append(featureFrequencies, feature)
+	}
+	for featureIndex := range features[0].counts {
+		featuresTotal := 0
+		for _, f := range features {
+			featuresTotal += f.counts[featureIndex]
+		}
+		for i, f := range features {
+			frequency := float64(f.counts[featureIndex]) / float64(featuresTotal)
+			frequencies := &featureFrequencies[i].Frequencies
+			*frequencies = append(*frequencies, frequency)
+		}
+	}
+	combinations := [][]float64{}
+	offset := 0
+	for range features {
+		columns := []float64{}
+		for range features {
+			frequency := float64(combinedFeatures[offset].count) / float64(analysis.combinedFeaturesTotal)
+			offset++
+			columns = append(columns, frequency)
+		}
+		combinations = append(combinations, columns)
+	}
+	model := FeatureAnalysis{
+		Features: featureFrequencies,
+		Combinations: combinations,
+	}
+	return model
 }

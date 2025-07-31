@@ -21,8 +21,11 @@ function createElement(tagName, container, properties) {
 	return element;
 }
 
-function getPercentage(value) {
-	const percentage = (value * 100).toFixed(2);
+function getPercentage(value, precision) {
+	if (precision == null) {
+		precision = 2;
+	}
+	const percentage = (value * 100).toFixed(precision);
 	return `${percentage}%`;
 }
 
