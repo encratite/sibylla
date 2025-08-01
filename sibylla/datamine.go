@@ -43,6 +43,7 @@ type DataMiningConfiguration struct {
 	Thresholds TresholdConfiguration `yaml:"thresholds"`
 	Leverage *float64 `yaml:"leverage"`
 	SingleFeature bool `yaml:"singleFeature"`
+	CorrelationSplits []SerializableDate `yaml:"correlationSplits"`
 }
 
 type StrategyFilter struct {
@@ -91,6 +92,7 @@ type dataMiningResult struct {
 	timeOfDay *time.Duration
 	equityCurve []equityCurveSample
 	returnsSamples []float64
+	returnsTimestamps []time.Time
 	weekdayReturns [daysPerWeek][]float64
 	optimizationReturns [daysPerWeek]deque.Deque[float64]
 	bannedDay *time.Weekday
@@ -170,13 +172,14 @@ func DataMine(yamlPath string) {
 	loadCurrencies()
 	miningConfig := loadDataMiningConfiguration(yamlPath)
 	launchProfiler()
-	model := executeDataMiningConfig(miningConfig)
+	taskResults, assetRecords := executeDataMiningConfig(miningConfig)
+	model := processResults(taskResults, assetRecords, miningConfig)
 	runtime.GC()
 	debug.FreeOSMemory()
 	runBrowser("Data Mining", dataMiningScript, model, true)
 }
 
-func executeDataMiningConfig(miningConfig DataMiningConfiguration) DataMiningModel {
+func executeDataMiningConfig(miningConfig DataMiningConfiguration) ([][]dataMiningResult, []assetRecords)  {
 	assetPaths := getAssetPaths(miningConfig)
 	start := time.Now()
 	assetRecords := parallelMap(assetPaths, func (path assetPath) assetRecords {
@@ -195,8 +198,7 @@ func executeDataMiningConfig(miningConfig DataMiningConfiguration) DataMiningMod
 	bar.Finish()
 	delta = time.Since(start)
 	fmt.Printf("Finished data mining in %.2f s\n", delta.Seconds())
-	model := processResults(taskResults, assetRecords, miningConfig)
-	return model
+	return taskResults, assetRecords
 }
 
 func getAssetPaths(miningConfig DataMiningConfiguration) []assetPath {
@@ -456,6 +458,9 @@ func onThresholdMatch(
 		}
 		*equityCurve = append(*equityCurve, sample)
 		result.returnsSamples = append(result.returnsSamples, percent)
+		if miningConfig.CorrelationSplits != nil {
+			result.returnsTimestamps = append(result.returnsTimestamps, record1.Timestamp)
+		}
 		result.weekdayReturns[weekdayIndex] = append(result.weekdayReturns[weekdayIndex], percent)
 		result.cumulativeReturn *= factor
 		result.cumulativeMax = max(result.cumulativeMax, result.cumulativeReturn)
@@ -559,24 +564,26 @@ func postProcessMiningResults(intradayRecords []FeatureRecord, results []dataMin
 		if !result.enabled {
 			continue
 		}
-		segmentSize := len(result.returnsSamples) / riskAdjustedSegments
-		segments := []float64{}
-		for j := range riskAdjustedSegments {
-			jNext := j + 1
-			offset := j * segmentSize
-			end := jNext * segmentSize
-			if jNext == riskAdjustedSegments {
-				end = len(result.returnsSamples)
-			}
-			samples := result.returnsSamples[offset:end]
-			riskAdjusted := getRiskAdjusted(samples)
-			segments = append(segments, riskAdjusted)
-		}
-		result.riskAdjusted = getRiskAdjusted(result.returnsSamples)
-		result.riskAdjustedMin = slices.Min(segments)
-		result.riskAdjustedRecent = segments[len(segments) - 1]
 		result.tradesRatio = getTradesRatio(result.equityCurve, intradayRecords, miningConfig)
-		result.returnsSamples = nil
+		if miningConfig.CorrelationSplits == nil {
+			segmentSize := len(result.returnsSamples) / riskAdjustedSegments
+			segments := []float64{}
+			for j := range riskAdjustedSegments {
+				jNext := j + 1
+				offset := j * segmentSize
+				end := jNext * segmentSize
+				if jNext == riskAdjustedSegments {
+					end = len(result.returnsSamples)
+				}
+				samples := result.returnsSamples[offset:end]
+				riskAdjusted := getRiskAdjusted(samples)
+				segments = append(segments, riskAdjusted)
+			}
+			result.riskAdjusted = getRiskAdjusted(result.returnsSamples)
+			result.riskAdjustedMin = slices.Min(segments)
+			result.riskAdjustedRecent = segments[len(segments) - 1]
+			result.returnsSamples = nil
+		}
 		if result.tradesRatio < miningConfig.TradesRatio {
 			result.disable()
 		}

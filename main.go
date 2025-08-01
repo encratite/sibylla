@@ -19,6 +19,7 @@ func main() {
 	generateSymbol := flag.String("generate", "", "Generate .gob archive for just that symbol")
 	viewArchive := flag.String("archive", "", "Analyze archive contents of the specified symbol")
 	dataMine := flag.String("data-mine", "", "Data mine strategies using the parameters from the specified YAML file")
+	correlation := flag.String("correlation", "", "Analyze the correlation between IS and OOS metrics of strategies data mined from the specified YAML file")
 	flag.Parse()
 	if *generateAll {
 		sibylla.Generate(nil)
@@ -28,6 +29,8 @@ func main() {
 		sibylla.ViewArchive(*viewArchive)
 	} else if *dataMine != "" {
 		sibylla.DataMine(*dataMine)
+	} else if *correlation != "" {
+		sibylla.OOSCorrelation(*correlation)
 	} else {
 		flag.Usage()
 	}
