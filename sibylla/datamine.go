@@ -44,6 +44,7 @@ type DataMiningConfiguration struct {
 	Leverage *float64 `yaml:"leverage"`
 	SingleFeature bool `yaml:"singleFeature"`
 	CorrelationSplits []SerializableDate `yaml:"correlationSplits"`
+	StrategyRatio *float64 `yaml:"strategyRatio"`
 }
 
 type StrategyFilter struct {
@@ -375,7 +376,7 @@ func executeDataMiningTask(task dataMiningTask, bar *pb.ProgressBar, miningConfi
 		for i := range results {
 			result := &results[i]
 			if result.enabled {
-				drawdownExceeded := result.drawdownMax > miningConfig.Drawdown
+				drawdownExceeded := !miningConfig.isCorrelation() && result.drawdownMax > miningConfig.Drawdown
 				var enoughSamples, badPerformance bool
 				if miningConfig.StrategyFilter != nil {
 					enoughSamples = len(result.equityCurve) >= miningConfig.StrategyFilter.Trades
@@ -458,7 +459,7 @@ func onThresholdMatch(
 		}
 		*equityCurve = append(*equityCurve, sample)
 		result.returnsSamples = append(result.returnsSamples, percent)
-		if miningConfig.CorrelationSplits != nil {
+		if miningConfig.isCorrelation() {
 			result.returnsTimestamps = append(result.returnsTimestamps, record1.Timestamp)
 		}
 		result.weekdayReturns[weekdayIndex] = append(result.weekdayReturns[weekdayIndex], percent)
@@ -565,7 +566,7 @@ func postProcessMiningResults(intradayRecords []FeatureRecord, results []dataMin
 			continue
 		}
 		result.tradesRatio = getTradesRatio(result.equityCurve, intradayRecords, miningConfig)
-		if miningConfig.CorrelationSplits == nil {
+		if !miningConfig.isCorrelation() {
 			segmentSize := len(result.returnsSamples) / riskAdjustedSegments
 			segments := []float64{}
 			for j := range riskAdjustedSegments {
@@ -678,6 +679,10 @@ func (c *DataMiningConfiguration) isValidTime(timestamp time.Time) bool {
 		return false
 	}
 	return true
+}
+
+func (c *DataMiningConfiguration) isCorrelation() bool {
+	return c.CorrelationSplits != nil
 }
 
 func getDataMiningModel(
