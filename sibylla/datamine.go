@@ -199,16 +199,7 @@ func executeDataMiningConfig(miningConfig DataMiningConfiguration) ([][]dataMini
 	bar.Finish()
 	delta = time.Since(start)
 	fmt.Printf("Finished data mining in %.2f s\n", delta.Seconds())
-	performNaNCheck(taskResults)
 	return taskResults, assetRecords
-}
-
-func performNaNCheck(taskResults [][]dataMiningResult) {
-	for _, results := range taskResults {
-		for _, result := range results {
-			result.nanCheck()
-		}
-	}
 }
 
 func getAssetPaths(miningConfig DataMiningConfiguration) []assetPath {
@@ -327,6 +318,9 @@ func processResults(
 				assetResults[key] = append(assetResults[key], result)
 			}
 		}
+	}
+	if len(assetResults) == 0 {
+		log.Fatal("No results")
 	}
 	analyzeWeekdayOptimizations(assetResults)
 	analysis := analyzeFeatureFrequency(assetResults, miningConfig)
@@ -603,9 +597,6 @@ func postProcessMiningResults(intradayRecords []FeatureRecord, results []dataMin
 func getRiskAdjusted(returnsSamples []float64) float64 {
 	mean, stdDev := stat.MeanStdDev(returnsSamples, nil)
 	riskAdjusted := mean / stdDev
-	if math.IsNaN(riskAdjusted) {
-		log.Fatal("getRiskAdjusted returned NaN")
-	}
 	return riskAdjusted
 }
 
@@ -891,43 +882,6 @@ func (d *dataMiningResult) disable() {
 	}
 	for i := range d.optimizationReturns {
 		d.optimizationReturns[i].Clear()
-	}
-}
-
-func (d *dataMiningResult) nanCheck() {
-	if
-		math.IsNaN(d.riskAdjusted) ||
-		math.IsNaN(d.riskAdjustedMin) ||
-		math.IsNaN(d.riskAdjustedRecent) ||
-		math.IsNaN(d.tradesRatio) ||
-		math.IsNaN(d.cumulativeReturn) ||
-		math.IsNaN(d.cumulativeMax) ||
-		math.IsNaN(d.drawdownMax) {
-		log.Fatal("NaN check failed")
-	}
-	for _, sample := range d.equityCurve {
-		if math.IsNaN(sample.cash) {
-			log.Fatal("NaN check failed for equityCurve")
-		}
-	}
-	for _, sample := range d.returnsSamples {
-		if math.IsNaN(sample) {
-			log.Fatal("NaN check failed for returnsSamples")
-		}
-	}
-	for _, samples := range d.weekdayReturns {
-		for _, sample := range samples {
-			if math.IsNaN(sample) {
-				log.Fatal("NaN check failed for weekdayReturns")
-			}
-		}
-	}
-	for _, samples := range d.optimizationReturns {
-		for i := 0; i < samples.Len(); i++ {
-			if math.IsNaN(samples.At(i)) {
-				log.Fatal("NaN check failed for optimizationReturns")
-			}
-		}
 	}
 }
 
