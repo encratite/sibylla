@@ -207,7 +207,13 @@ func processIntradayTimestamp(
 		Momentum2D: momentumHelper(2, 0, 0),
 		Momentum5D: momentumHelper(5, 0, 0),
 		Momentum10D: momentumHelper(10, 0, 0),
+		Momentum1H: momentumHelper(0, 0, 1),
+		Momentum2H: momentumHelper(0, 0, 2),
+		Momentum4H: momentumHelper(0, 0, 4),
 		Momentum8H: momentumHelper(0, 0, 8),
+		Returns4H: returnsHelper(0, 4),
+		Returns8H: returnsHelper(0, 8),
+		Returns16H: returnsHelper(0, 16),
 		Returns24H: returnsHelper(1, 0),
 		Returns48H: returnsHelper(2, 0),
 		Returns72H: returnsHelper(3, 0),
@@ -438,6 +444,9 @@ func (f *FeatureRecord) includeRecord() bool {
 		f.Momentum2D,
 		f.Momentum5D,
 		f.Momentum10D,
+		f.Momentum1H,
+		f.Momentum2H,
+		f.Momentum4H,
 		f.Momentum8H,
 	}
 	for _, x := range features {
