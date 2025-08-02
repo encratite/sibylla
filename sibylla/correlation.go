@@ -14,6 +14,7 @@ import (
 const recentYears = 2
 
 type segmentedReturnsStats struct {
+	index int
 	returns float64
 	maxDrawdown float64
 	riskAdjusted float64
@@ -22,6 +23,11 @@ type segmentedReturnsStats struct {
 type correlationFeature struct {
 	name string
 	coefficient float64
+}
+
+type correlationProperty struct {
+	get func (segmentedReturnsStats) float64
+	ascending bool
 }
 
 func OOSCorrelation(yamlPath string) {
@@ -38,22 +44,31 @@ func OOSCorrelation(yamlPath string) {
 		end := splits[i + 1].Time
 		processOOSSegment(start, end, taskResults, miningConfig, &isStats, &recentStats, &oosStats)
 	}
-	getReturns := func (s segmentedReturnsStats) float64 {
-		return s.returns
+	getReturns := correlationProperty{
+		get: func (s segmentedReturnsStats) float64 {
+			return s.returns
+		},
+		ascending: false,
 	}
-	getMaxDrawdown := func (s segmentedReturnsStats) float64 {
-		return s.maxDrawdown
+	getMaxDrawdown := correlationProperty{
+		get: func (s segmentedReturnsStats) float64 {
+			return s.maxDrawdown
+		},
+		ascending: true,
 	}
-	getRiskAdjusted := func (s segmentedReturnsStats) float64 {
-		return s.riskAdjusted
+	getRiskAdjusted := correlationProperty{
+		get: func (s segmentedReturnsStats) float64 {
+			return s.riskAdjusted
+		},
+		ascending: false,
 	}
 	features := []correlationFeature{
-		getCorrelationFeature("Returns (IS)", isStats, oosStats, getReturns),
-		getCorrelationFeature("Max Drawdown (IS)", isStats, oosStats, getMaxDrawdown),
-		getCorrelationFeature("RAR (IS)", isStats, oosStats, getRiskAdjusted),
-		getCorrelationFeature("Returns (recent)", recentStats, oosStats, getReturns),
-		getCorrelationFeature("Max Drawdown (recent)", recentStats, oosStats, getMaxDrawdown),
-		getCorrelationFeature("RAR (recent)", recentStats, oosStats, getRiskAdjusted),
+		getCorrelationFeature("Returns (IS)", isStats, oosStats, getReturns, miningConfig),
+		getCorrelationFeature("Max Drawdown (IS)", isStats, oosStats, getMaxDrawdown, miningConfig),
+		getCorrelationFeature("RAR (IS)", isStats, oosStats, getRiskAdjusted, miningConfig),
+		getCorrelationFeature("Returns (recent)", recentStats, oosStats, getReturns, miningConfig),
+		getCorrelationFeature("Max Drawdown (recent)", recentStats, oosStats, getMaxDrawdown, miningConfig),
+		getCorrelationFeature("RAR (recent)", recentStats, oosStats, getRiskAdjusted, miningConfig),
 	}
 	slices.SortFunc(features, func (a, b correlationFeature) int {
 		return cmp.Compare(math.Abs(b.coefficient), math.Abs(a.coefficient))
@@ -77,15 +92,17 @@ func processOOSSegment(
 	if !miningConfig.DateMin.Before(start) || !start.Before(end) {
 		log.Fatalf("Invalid parameters in processOOSSegment (DateMin = %s, start = %s, end = %s)", getDateString(miningConfig.DateMin.Time), getDateString(start), getDateString(end))
 	}
+	index := 0
 	for _, results := range taskResults {
 		for _, result := range results {
 			if !result.enabled {
 				continue
 			}
 			recentTime := start.AddDate(-recentYears, 0, 0)
-			addSegmentedReturnsStats(miningConfig.DateMin.Time, start, result.returnsSamples, result.returnsTimestamps, isStats)
-			addSegmentedReturnsStats(recentTime, start, result.returnsSamples, result.returnsTimestamps, recentStats)
-			addSegmentedReturnsStats(start, end, result.returnsSamples, result.returnsTimestamps, oosStats)
+			addSegmentedReturnsStats(miningConfig.DateMin.Time, start, index, result.returnsSamples, result.returnsTimestamps, isStats)
+			addSegmentedReturnsStats(recentTime, start, index, result.returnsSamples, result.returnsTimestamps, recentStats)
+			addSegmentedReturnsStats(start, end, index, result.returnsSamples, result.returnsTimestamps, oosStats)
+			index++
 		}
 	}
 }
@@ -93,6 +110,7 @@ func processOOSSegment(
 func addSegmentedReturnsStats(
 	start time.Time,
 	end time.Time,
+	index int,
 	returnsSamples []float64,
 	returnsTimestamps []time.Time,
 	output *[]segmentedReturnsStats,
@@ -101,6 +119,7 @@ func addSegmentedReturnsStats(
 	returns, maxDrawdown := getReturnsDrawdown(matchingSamples)
 	riskAdjusted := getRiskAdjusted(matchingSamples)
 	stats := segmentedReturnsStats{
+		index: index,
 		returns: returns,
 		maxDrawdown: maxDrawdown,
 		riskAdjusted: riskAdjusted,
@@ -135,12 +154,31 @@ func getReturnsDrawdown(returnsSamples []float64) (float64, float64) {
 	return returns, maxDrawdown
 }
 
-func getCorrelationFeature(name string, stats []segmentedReturnsStats, oosStats []segmentedReturnsStats, get func (segmentedReturnsStats) float64) correlationFeature {
+func getCorrelationFeature(
+	name string,
+	stats []segmentedReturnsStats,
+	oosStats []segmentedReturnsStats,
+	property correlationProperty,
+	miningConfig DataMiningConfiguration,
+) correlationFeature {
+	get := property.get
+	slices.SortFunc(stats, func (a, b segmentedReturnsStats) int {
+		output := cmp.Compare(get(a), get(b))
+		if property.ascending {
+			output = -output
+		}
+		return output
+	})
 	x := []float64{}
 	y := []float64{}
 	for i := range stats {
-		x = append(x, get(stats[i]))
-		y = append(y, oosStats[i].riskAdjusted)
+		if i >= miningConfig.StrategyLimit {
+			break
+		}
+		sample := stats[i]
+		oosSample := oosStats[sample.index]
+		x = append(x, get(sample))
+		y = append(y, oosSample.riskAdjusted)
 	}
 	coefficient := stat.Correlation(x, y, nil)
 	output := correlationFeature{
