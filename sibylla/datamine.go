@@ -205,15 +205,19 @@ func executeDataMiningConfig(miningConfig DataMiningConfiguration) ([][]dataMini
 func getAssetPaths(miningConfig DataMiningConfiguration) []assetPath {
 	assetPaths := []assetPath{}
 	for _, asset := range *assets {
-		if len(miningConfig.Assets) > 0 && !contains(miningConfig.Assets, asset.Symbol) {
-			continue
-		}
 		fRecords := 1
 		if asset.FRecords != nil {
 			fRecords = *asset.FRecords
 		}
+		baseSymbol := asset.Symbol
 		for fNumber := 1; fNumber <= fRecords; fNumber++ {
-			path := getArchivePath(asset.Symbol, fNumber)
+			path := getArchivePath(baseSymbol, fNumber)
+			if fNumber >= 2 {
+				asset.Symbol = fmt.Sprintf("%s.F%d", baseSymbol, fNumber)
+			}
+			if len(miningConfig.Assets) > 0 && !contains(miningConfig.Assets, asset.Symbol) {
+				continue
+			}
 			assetPath := assetPath{
 				asset: asset,
 				path: path,
@@ -496,6 +500,9 @@ func initializeMiningResults(task dataMiningTask, miningConfig DataMiningConfigu
 				for timeOfDay := miningConfig.TimeMin.Duration;
 					timeOfDay <= miningConfig.TimeMax.Duration;
 					timeOfDay += time.Duration(1) * time.Hour {
+					if timeOfDay.Hours() != 16 {
+						continue
+					}
 					result := dataMiningResult{
 						task: task,
 						returns: returns,
