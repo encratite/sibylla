@@ -560,6 +560,12 @@ func optimizeWeekdays(percent float64, weekdayIndex int, result *dataMiningResul
 }
 
 func postProcessMiningResults(intradayRecords []FeatureRecord, results []dataMiningResult, miningConfig DataMiningConfiguration) {
+	firstYear := miningConfig.DateMin.Time.Year()
+	lastDate := miningConfig.DateMax.Time
+	lastYear := lastDate.Year()
+	if lastDate.Month() == 1 {
+		lastYear--
+	}
 	for i := range results {
 		result := &results[i]
 		if len(result.equityCurve) < miningConfig.TradesMin {
@@ -567,6 +573,23 @@ func postProcessMiningResults(intradayRecords []FeatureRecord, results []dataMin
 			continue
 		}
 		if !result.enabled {
+			continue
+		}
+		years := map[int]struct{}{}
+		for _, sample := range result.equityCurve {
+			year := sample.timestamp.Year()
+			years[year] = struct{}{}
+		}
+		disable := false
+		for year := lastYear; year >= firstYear; year-- {
+			_, exists := years[year]
+			if !exists {
+				disable = true
+				break
+			}
+		}
+		if disable {
+			result.disable()
 			continue
 		}
 		result.tradesRatio = getTradesRatio(result.equityCurve, intradayRecords, miningConfig)
