@@ -327,6 +327,7 @@ func processResults(
 	for symbol := range assetResults {
 		slices.SortFunc(assetResults[symbol], func (a, b dataMiningResult) int {
 			return compareFloat64(b.riskAdjustedMin, a.riskAdjustedMin)
+			// return compareFloat64(b.cumulativeReturn, a.cumulativeReturn)
 		})
 		results := assetResults[symbol]
 		if len(results) > miningConfig.StrategyLimit {

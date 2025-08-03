@@ -211,6 +211,8 @@ func processIntradayTimestamp(
 		Momentum2H: momentumHelper(0, 0, 2),
 		Momentum4H: momentumHelper(0, 0, 4),
 		Momentum8H: momentumHelper(0, 0, 8),
+		Returns1H: returnsHelper(0, 1),
+		Returns2H: returnsHelper(0, 2),
 		Returns4H: returnsHelper(0, 4),
 		Returns8H: returnsHelper(0, 8),
 		Returns16H: returnsHelper(0, 16),
