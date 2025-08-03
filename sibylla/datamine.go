@@ -923,7 +923,11 @@ func getBuyAndHold(symbol string, allRecords []assetRecords) []equityCurveSample
 		if record.Timestamp.Hour() != buyAndHoldTimeOfDay || record.Returns24H == nil {
 			continue
 		}
-		returns := getAssetReturns(SideLong, record.Timestamp, record.Returns24H.Ticks, false, &records.asset)
+		side := SideLong
+		if records.asset.ShortBias {
+			side = SideShort
+		}
+		returns := getAssetReturns(side, record.Timestamp, record.Returns24H.Ticks, false, &records.asset)
 		cash += returns
 		sample := equityCurveSample{
 			timestamp: record.Timestamp,

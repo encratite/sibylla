@@ -33,6 +33,8 @@ type Asset struct {
 	BrokerFee float64 `yaml:"brokerFee"`
 	ExchangeFee float64 `yaml:"exchangeFee"`
 	Spread int `yaml:"spread"`
+
+	ShortBias bool `yaml:"shortBias"`
 }
 
 type ConfigDate struct {

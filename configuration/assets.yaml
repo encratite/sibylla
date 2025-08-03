@@ -172,6 +172,7 @@
   brokerFee: 0.85
   exchangeFee: 1.62
   spread: 1
+  shortBias: true
 - symbol: RB
   name: Gasoline RBOB
   legacyCutoff: RBJ06
@@ -389,6 +390,7 @@
   brokerFee: 0.85
   exchangeFee: 1.51
   spread: 1
+  shortBias: true
 - symbol: V2TX
   name: VSTOXX
   barchartSymbol: DV
@@ -399,6 +401,7 @@
   brokerFee: 0.85
   exchangeFee: 0.22
   spread: 1
+  shortBias: true
 
 # Crypto
 - symbol: MBT
