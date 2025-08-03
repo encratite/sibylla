@@ -33,8 +33,6 @@ type FeatureRecord struct {
 	Momentum2H *float64
 	Momentum4H *float64
 	Momentum8H *float64
-	Returns1H *ReturnsRecord
-	Returns2H *ReturnsRecord
 	Returns4H *ReturnsRecord
 	Returns8H *ReturnsRecord
 	Returns16H *ReturnsRecord
@@ -199,20 +197,6 @@ func getFeatureAccessors() []featureAccessor {
 func getReturnsAccessors() []returnsAccessor {
 	accessors := []returnsAccessor{
 		{
-			name: "returns1H",
-			holdingTime: 1,
-			get: func (f *FeatureRecord) *ReturnsRecord {
-				return f.Returns1H
-			},
-		},
-		{
-			name: "returns2H",
-			holdingTime: 2,
-			get: func (f *FeatureRecord) *ReturnsRecord {
-				return f.Returns2H
-			},
-		},
-		{
 			name: "returns4H",
 			holdingTime: 4,
 			get: func (f *FeatureRecord) *ReturnsRecord {
@@ -299,9 +283,7 @@ func getArchiveProperties() []archiveProperty {
 }
 
 func (f *FeatureRecord) hasReturns() bool {
-	return f.Returns1H != nil ||
-		f.Returns2H != nil ||
-		f.Returns4H != nil ||
+	return f.Returns4H != nil ||
 		f.Returns8H != nil ||
 		f.Returns16H != nil ||
 		f.Returns24H != nil ||
