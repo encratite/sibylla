@@ -147,6 +147,17 @@
   brokerFee: 0.85
   exchangeFee: 1.62
   spread: 34
+- symbol: HG
+  name: High Grade Copper
+  legacyCutoff: HGK03
+  includeMonths: [H, K, N, U, Z]
+  currency: USD
+  tickSize: 0.0005
+  tickValue: 12.5
+  margin: 8907.70
+  brokerFee: 0.85
+  exchangeFee: 1.62
+  spread: 2
 
 # Energies
 - symbol: CL
@@ -263,6 +274,7 @@
   brokerFee: 0.50
   exchangeFee: 0.26
   spread: 2
+  shortBias: true
 - symbol: 6N
   name: New Zealand Dollar
   barchartSymbol: N6
@@ -402,7 +414,7 @@
   exchangeFee: 2.12
   spread: 2
 - symbol: ZM
-  name: Soybean Oil
+  name: Soybean Meal
   legacyCutoff: ZMQ02
   cutoffDate: 2002-11-20
   currency: USD
