@@ -3,7 +3,6 @@ package sibylla
 import (
 	"compress/gzip"
 	"encoding/gob"
-	"fmt"
 	"log"
 	"os"
 	"time"
@@ -42,8 +41,8 @@ type FeatureRecord struct {
 }
 
 type ReturnsRecord struct {
-	Ticks int
-	Percent float64
+	Ticks1 int
+	Ticks2 int
 }
 
 type featureAccessor struct {
@@ -259,25 +258,15 @@ func getArchiveProperties() []archiveProperty {
 			get: func (f *FeatureRecord) *float64 {
 				pointer := returns.get(f)
 				if pointer != nil {
-					value := float64(pointer.Ticks)
+					delta := pointer.Ticks2 - pointer.Ticks1
+					value := float64(delta)
 					return &value
 				} else {
 					return nil
 				}
 			},
 		}
-		percentageProperty := archiveProperty{
-			name: fmt.Sprintf("%s (%%)", returns.name),
-			get: func (f *FeatureRecord) *float64 {
-				pointer := returns.get(f)
-				if pointer != nil {
-					return &pointer.Percent
-				} else {
-					return nil
-				}
-			},
-		}
-		properties = append(properties, ticksProperty, percentageProperty)
+		properties = append(properties, ticksProperty)
 	}
 	return properties
 }

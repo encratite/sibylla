@@ -3,7 +3,6 @@ package sibylla
 import (
 	"fmt"
 	"log"
-	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -279,10 +278,11 @@ func getReturns(
 	key := getGlobexTimeKey(symbol, adjustedTimestamp)
 	horizonClose, exists := intradayCloses[key]
 	if exists {
-		delta := horizonClose - close
-		ticks := int(delta / asset.TickSize)
-		if ticks < - returnsLimit || ticks > returnsLimit {
-			format := "[%s] Excessive returns sample: adjustedTimestamp = %s, timestamp = %s, horizonClose = %s, close = %s, ticks = %d\n"
+		ticks1 := int(close / asset.TickSize)
+		ticks2 := int(horizonClose / asset.TickSize)
+		delta := ticks2 - ticks1
+		if delta < - returnsLimit || delta > returnsLimit {
+			format := "[%s] Excessive returns sample: adjustedTimestamp = %s, timestamp = %s, horizonClose = %s, close = %s, delta = %d\n"
 			log.Fatalf(
 				format,
 				asset.Symbol,
@@ -290,16 +290,12 @@ func getReturns(
 				getTimeString(timestamp),
 				horizonClose,
 				close,
-				ticks,
+				delta,
 			)
 		}
-		percent, success := getRateOfChange(horizonClose, close)
-		if !success {
-			percent = math.NaN();
-		}
 		record := ReturnsRecord{
-			Ticks: ticks,
-			Percent: percent,
+			Ticks1: ticks1,
+			Ticks2: ticks2,
 		}
 		return &record
 	} else {

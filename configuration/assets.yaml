@@ -379,6 +379,109 @@
   exchangeFee: 0.22
   spread: 1
 
+# Agriculture
+- symbol: ZS
+  name: Soybean
+  legacyCutoff: ZSK02
+  cutoffDate: 2001-08-04
+  currency: USD
+  tickSize: 0.25
+  tickValue: 12.50
+  margin: 3162.13
+  brokerFee: 0.85
+  exchangeFee: 2.12
+  spread: 2
+- symbol: ZL
+  name: Soybean Oil
+  legacyCutoff: ZLQ02
+  currency: USD
+  tickSize: 0.01
+  tickValue: 6.0
+  margin: 2401.78
+  brokerFee: 0.85
+  exchangeFee: 2.12
+  spread: 2
+- symbol: ZM
+  name: Soybean Oil
+  legacyCutoff: ZMQ02
+  cutoffDate: 2002-11-20
+  currency: USD
+  tickSize: 0.01
+  tickValue: 10.0
+  margin: 3122.16
+  brokerFee: 0.85
+  exchangeFee: 2.12
+  spread: 1
+- symbol: ZW
+  name: Wheat
+  legacyCutoff: ZWK02
+  currency: USD
+  tickSize: 0.25
+  tickValue: 12.50
+  margin: 3183.90
+  brokerFee: 0.85
+  exchangeFee: 2.12
+  spread: 2
+- symbol: ZC
+  name: Corn
+  legacyCutoff: ZCK02
+  currency: USD
+  tickSize: 0.25
+  tickValue: 12.50
+  margin: 2301.12
+  brokerFee: 0.85
+  exchangeFee: 2.12
+  spread: 2
+
+# Softs
+- symbol: CT
+  name: Cotton No. 2
+  excludeMonths: [V]
+  currency: USD
+  tickSize: 0.01
+  tickValue: 5.0
+  margin: 3006.00
+  brokerFee: 0.85
+  exchangeFee: 2.12
+  spread: 2
+- symbol: SB
+  name: Sugar No. 11
+  legacyCutoff: SBH03
+  currency: USD
+  tickSize: 0.01
+  tickValue: 11.20
+  margin: 2166.04
+  brokerFee: 0.85
+  exchangeFee: 2.12
+  spread: 1
+
+# Livestock
+- symbol: HE
+  name: Lean Hogs
+  legacyCutoff: HEJ02
+  cutoffDate: 2002-03-02
+  currency: USD
+  tickSize: 0.025
+  tickValue: 10.0
+  margin: 3113.52
+  brokerFee: 0.85
+  exchangeFee: 2.12
+  spread: 3
+- symbol: LE
+  name: Live Cattle
+  legacyCutoff: LEG02
+  firstFilterContract: LEK03
+  lastFilterContract: LEK05
+  excludeMonths: [F, H, K, N, U, X]
+  cutoffDate: 2003-10-02
+  currency: USD
+  tickSize: 0.025
+  tickValue: 10.0
+  margin: 3236.58
+  brokerFee: 0.85
+  exchangeFee: 2.12
+  spread: 3
+
 # Volatility
 - symbol: VX
   name: S&P 500 VIX

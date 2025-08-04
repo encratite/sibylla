@@ -3,7 +3,6 @@ package sibylla
 import (
 	"fmt"
 	"log"
-	"math"
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
@@ -428,9 +427,6 @@ func onThresholdMatch(
 		if returnsRecord == nil {
 			continue
 		}
-		if math.IsNaN(returnsRecord.Percent) {
-			continue
-		}
 		cash := 0.0
 		equityCurve := &result.equityCurve
 		length := len(*equityCurve)
@@ -443,12 +439,11 @@ func onThresholdMatch(
 			}
 			cash = lastSample.cash
 		}
-		factor := 1.0 + returnsRecord.Percent
-		percent := returnsRecord.Percent
-		if result.side == SideShort {
-			factor = 1.0 / factor
-			percent = factor - 1.0
-		}
+		notionalValue := float64(returnsRecord.Ticks1) * asset.TickValue
+		delta := returnsRecord.Ticks2 - returnsRecord.Ticks1
+		returns := getAssetReturns(result.side, record1.Timestamp, delta, true, asset)
+		percent := returns / notionalValue
+		factor := 1.0 + percent
 		weekdayIndex := int(record1.Timestamp.Weekday()) - 1
 		bannedDay := result.bannedDay
 		if result.optimizeWeekdays {
@@ -457,7 +452,6 @@ func onThresholdMatch(
 		if bannedDay != nil && record1.Timestamp.Weekday() == *bannedDay {
 			continue
 		}
-		returns := getAssetReturns(result.side, record1.Timestamp, returnsRecord.Ticks, true, asset)
 		if miningConfig.Leverage != nil {
 			returns *= *miningConfig.Leverage
 		}
@@ -500,9 +494,6 @@ func initializeMiningResults(task dataMiningTask, miningConfig DataMiningConfigu
 				for timeOfDay := miningConfig.TimeMin.Duration;
 					timeOfDay <= miningConfig.TimeMax.Duration;
 					timeOfDay += time.Duration(1) * time.Hour {
-					if timeOfDay.Hours() != 16 {
-						continue
-					}
 					result := dataMiningResult{
 						task: task,
 						returns: returns,
@@ -935,7 +926,8 @@ func getBuyAndHold(symbol string, allRecords []assetRecords) []equityCurveSample
 		if records.asset.ShortBias {
 			side = SideShort
 		}
-		returns := getAssetReturns(side, record.Timestamp, record.Returns24H.Ticks, false, &records.asset)
+		delta := record.Returns24H.Ticks2 - record.Returns24H.Ticks1
+		returns := getAssetReturns(side, record.Timestamp, delta, false, &records.asset)
 		cash += returns
 		sample := equityCurveSample{
 			timestamp: record.Timestamp,
