@@ -234,7 +234,7 @@ func getReturnsAccessors() []returnsAccessor {
 			name: "returns72H",
 			holdingTime: 72,
 			get: func (f *FeatureRecord) *ReturnsRecord {
-				return f.Returns48H
+				return f.Returns72H
 			},
 		},
 	}
