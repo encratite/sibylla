@@ -5,11 +5,12 @@ import (
 	"fmt"
 	"io"
 	"log"
-	_ "net/http/pprof"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -210,6 +211,18 @@ func contains[T comparable](slice []T, element T) bool {
 		}
 	}
 	return false
+}
+
+func find[T any](slice []T, match func (T) bool) (T, bool) {
+	index := slices.IndexFunc(slice, func (element T) bool {
+		return match(element)
+	})
+	if index >= 0 {
+		return slice[index], true
+	} else {
+		var zeroValue T
+		return zeroValue, false
+	}
 }
 
 func compareFloat64(a, b float64) int {

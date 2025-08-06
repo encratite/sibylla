@@ -22,7 +22,7 @@ type weekdayOptimizationStats struct {
 	riskAdjustedRecent []float64
 }
 
-func analyzeWeekdayOptimizations(assetResults map[string][]dataMiningResult) {
+func analyzeWeekdayOptimizations(assetResults map[string][]backtestData) {
 	if !enableWeekdayAnalysis {
 		return
 	}
@@ -69,7 +69,7 @@ func (w *weekdayOptimizationCategory) print() {
 	w.optimized.print(w.category)
 }
 
-func (w *weekdayOptimizationStats) submit(result *dataMiningResult) {
+func (w *weekdayOptimizationStats) submit(result *backtestData) {
 	w.riskAdjusted = append(w.riskAdjusted, result.riskAdjusted)
 	w.riskAdjustedMin = append(w.riskAdjustedMin, result.riskAdjustedMin)
 	w.riskAdjustedRecent = append(w.riskAdjustedRecent, result.riskAdjustedRecent)

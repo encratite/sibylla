@@ -117,7 +117,7 @@ func OOSCorrelation(yamlPath string) {
 	}
 	fmt.Printf("\tFeature mode: %s\n", featureMode)
 	fmt.Printf("\tAssets evaluated: %s\n", strings.Join(miningConfig.Assets, ", "))
-	fmt.Printf("\tQuantile range: %.2f (increments of %.4f)\n", miningConfig.Thresholds.Range, miningConfig.Thresholds.Increment)
+	fmt.Printf("\tQuantile range: %.2f (increments of %.4f)\n", miningConfig.Conditions.Range, miningConfig.Conditions.Increment)
 	fmt.Printf("\nBest predictors of OOS RAR:\n\n")
 	for i, feature := range features {
 		fmt.Printf("\t%d. %s: %.3f\n", i + 1, feature.name, feature.coefficient)
@@ -129,7 +129,7 @@ func processOOSSegment(
 	start time.Time,
 	end time.Time,
 	strategyCount *int,
-	taskResults [][]dataMiningResult,
+	taskResults [][]backtestData,
 	miningConfig DataMiningConfiguration,
 ) collectedSegmentStats {
 	stats := collectedSegmentStats{}

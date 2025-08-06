@@ -32,14 +32,14 @@ type DataMiningConfiguration struct {
 	StrategyLimit int `yaml:"strategyLimit"`
 	StrategyFilter *StrategyFilter `yaml:"strategyFilter"`
 	Drawdown float64 `yaml:"drawdown"`
-	DateMin *SerializableDate `yaml:"dateMin"`
-	DateMax *SerializableDate `yaml:"dateMax"`
-	TimeMin *SerializableDuration `yaml:"timeMin"`
-	TimeMax *SerializableDuration `yaml:"timeMax"`
+	DateMin SerializableDate `yaml:"dateMin"`
+	DateMax SerializableDate `yaml:"dateMax"`
+	TimeMin SerializableDuration `yaml:"timeMin"`
+	TimeMax SerializableDuration `yaml:"timeMax"`
 	OptimizeWeekdays bool `yaml:"optimizeWeekdays"`
 	TradesMin int `yaml:"tradesMin"`
 	TradesRatio float64 `yaml:"tradesRatio"`
-	Thresholds TresholdConfiguration `yaml:"thresholds"`
+	Conditions ConditionConfiguration `yaml:"conditions"`
 	Leverage *float64 `yaml:"leverage"`
 	SingleFeature bool `yaml:"singleFeature"`
 	CorrelationSplits []SerializableDate `yaml:"correlationSplits"`
@@ -51,78 +51,23 @@ type StrategyFilter struct {
 	Limit float64 `yaml:"limit"`
 }
 
-type TresholdConfiguration struct {
+type ConditionConfiguration struct {
 	Range float64 `yaml:"range"`
 	Increment float64 `yaml:"increment"`
 }
 
-type positionSide int
-
-const (
-	SideLong positionSide = iota
-	SideShort
-)
-
-type assetPath struct {
-	asset Asset
-	path string
-}
-
-type assetRecords struct {
-	asset Asset
-	dailyRecords []DailyRecord
-	intradayRecords []FeatureRecord
-	recordsMap map[time.Time]*FeatureRecord
-}
-
-type featureThreshold struct {
-	asset assetRecords
-	feature featureAccessor
-	min float64
-	max float64
-}
-
-type dataMiningTask [2]featureThreshold
-
-type dataMiningResult struct {
-	task dataMiningTask
-	returns returnsAccessor
-	side positionSide
-	optimizeWeekdays bool
-	timeOfDay *time.Duration
-	equityCurve []equityCurveSample
-	returnsSamples []float64
-	returnsTimestamps []time.Time
-	weekdayReturns [daysPerWeek][]float64
-	optimizationReturns [daysPerWeek]deque.Deque[float64]
-	bannedDay *time.Weekday
-	riskAdjusted float64
-	riskAdjustedMin float64
-	riskAdjustedRecent float64
-	tradesRatio float64
-	cumulativeReturn float64
-	cumulativeMax float64
-	drawdownMax float64
-	enabled bool
-}
-
-type equityCurveSample struct {
-	timestamp time.Time
-	cash float64
-}
-
 type DataMiningModel struct {
-	DateMin *string `json:"dateMin"`
-	DateMax *string `json:"dateMax"`
-	TimeMin *string `json:"timeMin"`
-	TimeMax *string `json:"timeMax"`
+	DateMin string `json:"dateMin"`
+	DateMax string `json:"dateMax"`
+	TimeMin string `json:"timeMin"`
+	TimeMax string `json:"timeMax"`
 	OptimizeWeekdays bool `json:"optimizeWeeks"`
-	Thresholds DataMiningThresholds `json:"thresholds"`
+	Conditions DataMiningConditions `json:"conditions"`
 	Results []AssetMiningResults `json:"results"`
 	Features FeatureAnalysis `json:"features"`
 }
 
-type DataMiningThresholds struct {
+type DataMiningConditions struct {
 	Range float64 `json:"range"`
 	Increment float64 `json:"increment"`
 }
@@ -167,6 +112,10 @@ type FeatureAnalysis struct {
 	Combinations [][]float64 `json:"combinations"`
 }
 
+type dataMiningTask struct {
+	conditions []strategyCondition
+}
+
 func DataMine(yamlPath string) {
 	loadConfiguration()
 	loadCurrencies()
@@ -179,99 +128,33 @@ func DataMine(yamlPath string) {
 	runBrowser("Data Mining", dataMiningScript, model, true)
 }
 
-func executeDataMiningConfig(miningConfig DataMiningConfiguration) ([][]dataMiningResult, []assetRecords)  {
-	assetPaths := getAssetPaths(miningConfig)
+func executeDataMiningConfig(miningConfig DataMiningConfiguration) ([][]backtestData, []assetRecords)  {
+	assetRecords := getAssetRecords(
+		miningConfig.Assets,
+		miningConfig.DateMin,
+		miningConfig.DateMax,
+		&miningConfig.TimeMin,
+		&miningConfig.TimeMax,
+	)
 	start := time.Now()
-	assetRecords := parallelMap(assetPaths, func (path assetPath) assetRecords {
-		return getAssetRecords(path, miningConfig)
-	})
-	delta := time.Since(start)
-	fmt.Printf("Loaded archives in %.2f s\n", delta.Seconds())
-	start = time.Now()
 	tasks := getDataMiningTasks(assetRecords, miningConfig)
 	fmt.Println("Data mining strategies")
 	bar := pb.StartNew(len(tasks))
 	bar.Start()
-	taskResults := parallelMap(tasks, func (task dataMiningTask) []dataMiningResult {
+	taskResults := parallelMap(tasks, func (task dataMiningTask) []backtestData {
 		return executeDataMiningTask(task, bar, miningConfig)
 	})
 	bar.Finish()
-	delta = time.Since(start)
+	delta := time.Since(start)
 	fmt.Printf("Finished data mining in %.2f s\n", delta.Seconds())
 	return taskResults, assetRecords
-}
-
-func getAssetPaths(miningConfig DataMiningConfiguration) []assetPath {
-	assetPaths := []assetPath{}
-	for _, asset := range *assets {
-		fRecords := 1
-		if asset.FRecords != nil {
-			fRecords = *asset.FRecords
-		}
-		baseSymbol := asset.Symbol
-		for fNumber := 1; fNumber <= fRecords; fNumber++ {
-			path := getArchivePath(baseSymbol, fNumber)
-			if fNumber >= 2 {
-				asset.Symbol = fmt.Sprintf("%s.F%d", baseSymbol, fNumber)
-			}
-			if len(miningConfig.Assets) > 0 && !contains(miningConfig.Assets, asset.Symbol) {
-				continue
-			}
-			assetPath := assetPath{
-				asset: asset,
-				path: path,
-			}
-			assetPaths = append(assetPaths, assetPath)
-		}
-	}
-	return assetPaths
-}
-
-func getAssetRecords(assetPath assetPath, miningConfig DataMiningConfiguration) assetRecords {
-	archive := readArchive(assetPath.path)
-	dailyRecords := []DailyRecord{}
-	intradayRecords := []FeatureRecord{}
-	recordsMap := map[time.Time]*FeatureRecord{}
-	for _, record := range archive.DailyRecords {
-		isValid, breakLoop := miningConfig.isValidDate(record.Date)
-		if !isValid {
-			if breakLoop {
-				break
-			} else {
-				continue
-			}
-		}
-		dailyRecords = append(dailyRecords, record)
-	}
-	for _, record := range archive.IntradayRecords {
-		isValid, breakLoop := miningConfig.isValidDate(record.Timestamp)
-		if !isValid {
-			if breakLoop {
-				break
-			} else {
-				continue
-			}
-		}
-		isValid = miningConfig.isValidTime(record.Timestamp)
-		if !isValid {
-			continue
-		}
-		intradayRecords = append(intradayRecords, record)
-		recordsMap[record.Timestamp] = &record
-	}
-	return assetRecords{
-		asset: assetPath.asset,
-		dailyRecords: dailyRecords,
-		intradayRecords: intradayRecords,
-		recordsMap: recordsMap,
-	}
 }
 
 func getDataMiningTasks(assetRecords []assetRecords, miningConfig DataMiningConfiguration) []dataMiningTask {
 	accessors := getFeatureAccessors()
 	tasks := []dataMiningTask{}
-	thresholdRange := miningConfig.Thresholds.Range
-	increment := miningConfig.Thresholds.Increment
+	conditionRange := miningConfig.Conditions.Range
+	increment := miningConfig.Conditions.Increment
 	const epsilonLimit = 1.0 + 1e-3
 	singleFeature := miningConfig.SingleFeature
 	for i, asset1 := range assetRecords {
@@ -287,16 +170,22 @@ func getDataMiningTasks(assetRecords []assetRecords, miningConfig DataMiningConf
 					if singleFeature && (i != j || k != l) {
 						continue
 					}
-					for min1 := 0.0; min1 + thresholdRange <= epsilonLimit; min1 += increment {
-						for min2 := 0.0; min2 + thresholdRange <= epsilonLimit; min2 += increment {
+					for min1 := 0.0; min1 + conditionRange <= epsilonLimit; min1 += increment {
+						for min2 := 0.0; min2 + conditionRange <= epsilonLimit; min2 += increment {
 							if singleFeature && min1 != min2 {
 								continue
 							}
-							max1 := min1 + thresholdRange
-							max2 := min2 + thresholdRange
-							threshold1 := newDataMiningThreshold(asset1, feature1, min1, max1)
-							threshold2 := newDataMiningThreshold(asset2, feature2, min2, max2)
-							task := dataMiningTask{threshold1, threshold2}
+							max1 := min1 + conditionRange
+							max2 := min2 + conditionRange
+							parameter1 := newDataMiningParameter(asset1, feature1, min1, max1)
+							parameter2 := newDataMiningParameter(asset2, feature2, min2, max2)
+							parameters := []strategyCondition{
+								parameter1,
+								parameter2,
+							}
+							task := dataMiningTask{
+								conditions: parameters,
+							}
 							tasks = append(tasks, task)
 						}
 					}
@@ -308,16 +197,16 @@ func getDataMiningTasks(assetRecords []assetRecords, miningConfig DataMiningConf
 }
 
 func processResults(
-	taskResults [][]dataMiningResult,
+	taskResults [][]backtestData,
 	assetRecords []assetRecords,
 	miningConfig DataMiningConfiguration,
 ) DataMiningModel {
 	start := time.Now()
-	assetResults := map[string][]dataMiningResult{}
+	assetResults := map[string][]backtestData{}
 	for _, results := range taskResults {
 		for _, result := range results {
 			if result.enabled {
-				key := result.task[0].asset.asset.Symbol
+				key := result.conditions[0].asset.asset.Symbol
 				assetResults[key] = append(assetResults[key], result)
 			}
 		}
@@ -328,17 +217,15 @@ func processResults(
 	analyzeWeekdayOptimizations(assetResults)
 	analysis := analyzeFeatureFrequency(assetResults, miningConfig)
 	for symbol := range assetResults {
-		slices.SortFunc(assetResults[symbol], func (a, b dataMiningResult) int {
+		slices.SortFunc(assetResults[symbol], func (a, b backtestData) int {
 			return compareFloat64(b.riskAdjustedMin, a.riskAdjustedMin)
-			// return compareFloat64(b.equityCurve[len(b.equityCurve) - 1].cash, a.equityCurve[len(a.equityCurve) - 1].cash)
 		})
 		results := assetResults[symbol]
 		if len(results) > miningConfig.StrategyLimit {
 			results = results[:miningConfig.StrategyLimit]
 		}
-		slices.SortFunc(results, func (a, b dataMiningResult) int {
+		slices.SortFunc(results, func (a, b backtestData) int {
 			return compareFloat64(b.riskAdjustedRecent, a.riskAdjustedRecent)
-			// return compareFloat64(b.equityCurve[len(b.equityCurve) - 1].cash, a.equityCurve[len(a.equityCurve) - 1].cash)
 		})
 		assetResults[symbol] = results
 	}
@@ -354,8 +241,8 @@ func processResults(
 	return model
 }
 
-func newDataMiningThreshold(asset assetRecords, feature featureAccessor, min float64, max float64) featureThreshold {
-	return featureThreshold{
+func newDataMiningParameter(asset assetRecords, feature featureAccessor, min float64, max float64) strategyCondition {
+	return strategyCondition{
 		asset: asset,
 		feature: feature,
 		min: min,
@@ -363,51 +250,51 @@ func newDataMiningThreshold(asset assetRecords, feature featureAccessor, min flo
 	}
 }
 
-func executeDataMiningTask(task dataMiningTask, bar *pb.ProgressBar, miningConfig DataMiningConfiguration) []dataMiningResult {
-	threshold1 := &task[0]
-	threshold2 := &task[1]
-	results := initializeMiningResults(task, miningConfig)
-	for i := range threshold1.asset.intradayRecords {
-		record1 := &threshold1.asset.intradayRecords[i]
-		if !record1.hasReturns() || !threshold1.match(record1) {
+func executeDataMiningTask(task dataMiningTask, bar *pb.ProgressBar, miningConfig DataMiningConfiguration) []backtestData {
+	condition1 := &task.conditions[0]
+	condition2 := &task.conditions[1]
+	backtests := initializeMiningBacktests(task, miningConfig)
+	for i := range condition1.asset.intradayRecords {
+		record1 := &condition1.asset.intradayRecords[i]
+		if !record1.hasReturns() || !condition1.match(record1) {
 			continue
 		}
-		record2, exists := threshold2.asset.recordsMap[record1.Timestamp]
-		if !exists || !threshold2.match(record2) {
+		record2, exists := condition2.asset.recordsMap[record1.Timestamp]
+		if !exists || !condition2.match(record2) {
 			continue
 		}
-		asset := &threshold1.asset.asset
-		stillWorking := onThresholdMatch(record1, asset, results, miningConfig)
+		asset := &condition1.asset.asset
+		stillWorking := onDataMiningConditionMatch(record1, asset, backtests, miningConfig)
 		if !stillWorking {
 			break
 		}
-		for i := range results {
-			result := &results[i]
-			if result.enabled {
-				drawdownExceeded := !miningConfig.isCorrelation() && result.drawdownMax > miningConfig.Drawdown
+		for i := range backtests {
+			backtestt := &backtests[i]
+			if backtestt.enabled {
+				drawdownExceeded := !miningConfig.isCorrelation() && backtestt.drawdownMax > miningConfig.Drawdown
 				var enoughSamples, badPerformance bool
 				if miningConfig.StrategyFilter != nil {
-					enoughSamples = len(result.equityCurve) >= miningConfig.StrategyFilter.Trades
-					badPerformance = result.cumulativeReturn < miningConfig.StrategyFilter.Limit
+					enoughSamples = len(backtestt.equityCurve) >= miningConfig.StrategyFilter.Trades
+					badPerformance = backtestt.cumulativeReturn < miningConfig.StrategyFilter.Limit
 				} else {
 					enoughSamples = false
 					badPerformance = false
 				}
 				if drawdownExceeded || (enoughSamples && badPerformance) {
-					result.disable()
+					backtestt.disable()
 				}
 			}
 		}
 	}
-	postProcessMiningResults(threshold1.asset.intradayRecords, results, miningConfig)
+	postProcessBacktests(condition1.asset.intradayRecords, backtests, miningConfig)
 	bar.Increment()
-	return results
+	return backtests
 }
 
-func onThresholdMatch(
+func onDataMiningConditionMatch(
 	record1 *FeatureRecord,
 	asset *Asset,
-	results []dataMiningResult,
+	results []backtestData,
 	miningConfig DataMiningConfiguration,
 ) bool {
 	stillWorking := false
@@ -417,66 +304,15 @@ func onThresholdMatch(
 			continue
 		}
 		stillWorking = true
-		if result.timeOfDay != nil {
-			timeOfDay := getTimeOfDay(record1.Timestamp)
-			if timeOfDay != *result.timeOfDay {
-				continue
-			}
-		}
-		returnsRecord := result.returns.get(record1)
-		if returnsRecord == nil {
-			continue
-		}
-		cash := 0.0
-		equityCurve := &result.equityCurve
-		length := len(*equityCurve)
-		if length > 0 {
-			lastSample := &(*equityCurve)[length - 1]
-			duration := record1.Timestamp.Sub(lastSample.timestamp)
-			holdingTime := time.Duration(result.returns.holdingTime) * time.Hour
-			if duration < holdingTime {
-				continue
-			}
-			cash = lastSample.cash
-		}
-		notionalValue := float64(returnsRecord.Ticks1) * asset.TickValue
-		delta := returnsRecord.Ticks2 - returnsRecord.Ticks1
-		returns := getAssetReturns(result.side, record1.Timestamp, delta, true, asset)
-		percent := returns / notionalValue
-		factor := 1.0 + percent
-		weekdayIndex := int(record1.Timestamp.Weekday()) - 1
-		bannedDay := result.bannedDay
-		if result.optimizeWeekdays {
-			optimizeWeekdays(percent, weekdayIndex, result)
-		}
-		if bannedDay != nil && record1.Timestamp.Weekday() == *bannedDay {
-			continue
-		}
-		if miningConfig.Leverage != nil {
-			returns *= *miningConfig.Leverage
-		}
-		cash += returns
-		sample := equityCurveSample{
-			timestamp: record1.Timestamp,
-			cash: cash,
-		}
-		*equityCurve = append(*equityCurve, sample)
-		result.returnsSamples = append(result.returnsSamples, percent)
-		if miningConfig.isCorrelation() {
-			result.returnsTimestamps = append(result.returnsTimestamps, record1.Timestamp)
-		}
-		result.weekdayReturns[weekdayIndex] = append(result.weekdayReturns[weekdayIndex], percent)
-		result.cumulativeReturn *= factor
-		result.cumulativeMax = max(result.cumulativeMax, result.cumulativeReturn)
-		drawdown := 1.0 - result.cumulativeReturn / result.cumulativeMax
-		result.drawdownMax = max(result.drawdownMax, drawdown)
+		addTimestamp := miningConfig.isCorrelation()
+		onConditionMatch(record1, asset, miningConfig.Leverage, addTimestamp, result)
 	}
 	return stillWorking
 }
 
-func initializeMiningResults(task dataMiningTask, miningConfig DataMiningConfiguration) []dataMiningResult {
-	results := []dataMiningResult{}
-	sides := []positionSide{}
+func initializeMiningBacktests(task dataMiningTask, miningConfig DataMiningConfiguration) []backtestData {
+	backtests := []backtestData{}
+	sides := []PositionSide{}
 	if miningConfig.EnableLong {
 		sides = append(sides, SideLong)
 	}
@@ -494,8 +330,8 @@ func initializeMiningResults(task dataMiningTask, miningConfig DataMiningConfigu
 				for timeOfDay := miningConfig.TimeMin.Duration;
 					timeOfDay <= miningConfig.TimeMax.Duration;
 					timeOfDay += time.Duration(1) * time.Hour {
-					result := dataMiningResult{
-						task: task,
+					backtest := backtestData{
+						conditions: task.conditions,
 						returns: returns,
 						side: side,
 						optimizeWeekdays: optimizeWeekdays,
@@ -510,18 +346,18 @@ func initializeMiningResults(task dataMiningTask, miningConfig DataMiningConfigu
 						drawdownMax: 0.0,
 						enabled: true,
 					}
-					for i := range result.optimizationReturns {
-						result.optimizationReturns[i].SetBaseCap(weekdayOptimizationBuffer + 2)
+					for i := range backtest.optimizationReturns {
+						backtest.optimizationReturns[i].SetBaseCap(weekdayOptimizationBuffer + 2)
 					}
-					results = append(results, result)
+					backtests = append(backtests, backtest)
 				}
 			}
 		}
 	}
-	return results
+	return backtests
 }
 
-func optimizeWeekdays(percent float64, weekdayIndex int, result *dataMiningResult) {
+func optimizeWeekdays(percent float64, weekdayIndex int, result *backtestData) {
 	weekdayReturns := &result.optimizationReturns[weekdayIndex]
 	weekdayReturns.PushBack(percent)
 	for weekdayReturns.Len() > weekdayOptimizationBuffer {
@@ -558,24 +394,24 @@ func optimizeWeekdays(percent float64, weekdayIndex int, result *dataMiningResul
 	}
 }
 
-func postProcessMiningResults(intradayRecords []FeatureRecord, results []dataMiningResult, miningConfig DataMiningConfiguration) {
+func postProcessBacktests(intradayRecords []FeatureRecord, backtests []backtestData, miningConfig DataMiningConfiguration) {
 	firstYear := miningConfig.DateMin.Time.Year()
 	lastDate := miningConfig.DateMax.Time
 	lastYear := lastDate.Year()
 	if lastDate.Month() == 1 {
 		lastYear--
 	}
-	for i := range results {
-		result := &results[i]
-		if len(result.equityCurve) < miningConfig.TradesMin {
-			result.disable()
+	for i := range backtests {
+		backtest := &backtests[i]
+		if len(backtest.equityCurve) < miningConfig.TradesMin {
+			backtest.disable()
 			continue
 		}
-		if !result.enabled {
+		if !backtest.enabled {
 			continue
 		}
 		years := map[int]struct{}{}
-		for _, sample := range result.equityCurve {
+		for _, sample := range backtest.equityCurve {
 			year := sample.timestamp.Year()
 			years[year] = struct{}{}
 		}
@@ -588,31 +424,13 @@ func postProcessMiningResults(intradayRecords []FeatureRecord, results []dataMin
 			}
 		}
 		if disable {
-			result.disable()
+			backtest.disable()
 			continue
 		}
-		result.tradesRatio = getTradesRatio(result.equityCurve, intradayRecords, miningConfig)
-		if !miningConfig.isCorrelation() {
-			segmentSize := len(result.returnsSamples) / riskAdjustedSegments
-			segments := []float64{}
-			for j := range riskAdjustedSegments {
-				jNext := j + 1
-				offset := j * segmentSize
-				end := jNext * segmentSize
-				if jNext == riskAdjustedSegments {
-					end = len(result.returnsSamples)
-				}
-				samples := result.returnsSamples[offset:end]
-				riskAdjusted := getRiskAdjusted(samples)
-				segments = append(segments, riskAdjusted)
-			}
-			result.riskAdjusted = getRiskAdjusted(result.returnsSamples)
-			result.riskAdjustedMin = slices.Min(segments)
-			result.riskAdjustedRecent = segments[len(segments) - 1]
-			result.returnsSamples = nil
-		}
-		if result.tradesRatio < miningConfig.TradesRatio {
-			result.disable()
+		setRiskAdjusted := !miningConfig.isCorrelation()
+		backtest.postProcess(setRiskAdjusted, miningConfig.DateMin.Time, miningConfig.DateMax.Time, intradayRecords)
+		if backtest.tradesRatio < miningConfig.TradesRatio {
+			backtest.disable()
 		}
 	}
 }
@@ -623,7 +441,7 @@ func getRiskAdjusted(returnsSamples []float64) float64 {
 	return riskAdjusted
 }
 
-func getAssetReturns(side positionSide, timestamp time.Time, ticks int, enableFees bool, asset *Asset) float64 {
+func getAssetReturns(side PositionSide, timestamp time.Time, ticks int, enableFees bool, asset *Asset) float64 {
 	if enableFees {
 		if side == SideLong {
 			ticks -= asset.Spread
@@ -643,7 +461,7 @@ func getAssetReturns(side positionSide, timestamp time.Time, ticks int, enableFe
 	return gains
 }
 
-func (c *featureThreshold) match(record *FeatureRecord) bool {
+func (c *strategyCondition) match(record *FeatureRecord) bool {
 	pointer := c.feature.get(record)
 	if pointer == nil {
 		return false
@@ -669,42 +487,20 @@ func (c *DataMiningConfiguration) sanityCheck() {
 	if c.StrategyFilter.Limit == 0 || c.StrategyFilter.Limit == 0.0 {
 		log.Fatal("Invalid strategy filter configuration")
 	}
-	if c.Thresholds.Increment == 0.0 || c.Thresholds.Range == 0.0 {
-		log.Fatal("Invalid threshold configuration")
+	if c.Conditions.Increment == 0.0 || c.Conditions.Range == 0.0 {
+		log.Fatal("Invalid condition configuration")
 	}
-	if c.DateMin != nil && c.DateMax != nil && !c.DateMin.Before(c.DateMax.Time) {
+	if !c.DateMin.Before(c.DateMax.Time) {
 		format := "Invalid dateMin/dateMax values in data mining configuration: %s vs. %s"
 		log.Fatalf(format, getDateString(c.DateMin.Time), getDateString(c.DateMax.Time))
 	}
-	if c.TimeMin != nil && c.TimeMax != nil && c.TimeMin.Duration > c.TimeMax.Duration {
+	if c.TimeMin.Duration > c.TimeMax.Duration {
 		format := "Invalid timeMin/timeMax values in data mining configuration: %s vs. %s"
-		log.Fatalf(format, *c.TimeMin, *c.TimeMax)
+		log.Fatalf(format, c.TimeMin, c.TimeMax)
 	}
-	if c.TimeMin == nil || c.TimeMax == nil {
+	if c.TimeMin.Duration > c.TimeMax.Duration {
 		log.Fatalf("Data mining without timeMin/timeMax constraints is no longer supported")
 	}
-}
-
-func (c *DataMiningConfiguration) isValidDate(timestamp time.Time) (bool, bool) {
-	if c.DateMin != nil && timestamp.Before(c.DateMin.Time) {
-		return false, false
-	}
-	if c.DateMax != nil && !timestamp.Before(c.DateMax.Time) {
-		return false, true
-	}
-	return true, false
-}
-
-func (c *DataMiningConfiguration) isValidTime(timestamp time.Time) bool {
-	date := getDateFromTime(timestamp)
-	timeOfDay := timestamp.Sub(date)
-	if c.TimeMin != nil && timeOfDay < c.TimeMin.Duration {
-		return false
-	}
-	if c.TimeMax != nil && timeOfDay > c.TimeMax.Duration {
-		return false
-	}
-	return true
 }
 
 func (c *DataMiningConfiguration) isCorrelation() bool {
@@ -712,7 +508,7 @@ func (c *DataMiningConfiguration) isCorrelation() bool {
 }
 
 func getDataMiningModel(
-	assetResults map[string][]dataMiningResult,
+	assetResults map[string][]backtestData,
 	dailyRecords map[string][]DailyRecord,
 	assetRecords []assetRecords,
 	analysis featureAnalysis,
@@ -720,14 +516,14 @@ func getDataMiningModel(
 ) DataMiningModel {
 	features := getFeatureModel(analysis)
 	model := DataMiningModel{
-		DateMin: getDateStringPointer(miningConfig.DateMin),
-		DateMax: getDateStringPointer(miningConfig.DateMax),
-		TimeMin: getTimeOfDayStringPointer(miningConfig.TimeMin),
-		TimeMax: getTimeOfDayStringPointer(miningConfig.TimeMax),
+		DateMin: getDateString(miningConfig.DateMin.Time),
+		DateMax: getDateString(miningConfig.DateMax.Time),
+		TimeMin: getTimeOfDayString(miningConfig.TimeMin.Duration),
+		TimeMax: getTimeOfDayString(miningConfig.TimeMax.Duration),
 		OptimizeWeekdays: miningConfig.OptimizeWeekdays,
-		Thresholds: DataMiningThresholds{
-			Range: miningConfig.Thresholds.Range,
-			Increment: miningConfig.Thresholds.Increment,
+		Conditions: DataMiningConditions{
+			Range: miningConfig.Conditions.Range,
+			Increment: miningConfig.Conditions.Increment,
 		},
 		Results: []AssetMiningResults{},
 		Features: features,
@@ -768,28 +564,10 @@ func getDataMiningModel(
 	return model
 }
 
-func getDateStringPointer(date *SerializableDate) *string {
-	if date != nil {
-		output := getDateString(date.Time)
-		return &output
-	} else {
-		return nil
-	}
-}
-
-func getTimeOfDayStringPointer(t *SerializableDuration) *string {
-	if t != nil {
-		output := fmt.Sprintf("%02d:%02d", int(t.Hours()), int(t.Minutes()) % 60)
-		return &output
-	} else {
-		return nil
-	}
-}
-
 func getStrategyMiningResult(
 	symbol string,
 	index int,
-	result dataMiningResult,
+	result backtestData,
 	buyAndHold []equityCurveSample,
 ) StrategyMiningResult {
 	equityCurve := result.equityCurve
@@ -817,12 +595,12 @@ func getStrategyMiningResult(
 		timeOfDayString := getTimeOfDayString(*result.timeOfDay)
 		output.TimeOfDay = &timeOfDayString
 	}
-	for _, threshold := range result.task {
+	for _, parameter := range result.conditions {
 		feature := StrategyFeature{
-			Symbol: threshold.asset.asset.Symbol,
-			Name: threshold.feature.name,
-			Min: threshold.min,
-			Max: threshold.max,
+			Symbol: parameter.asset.asset.Symbol,
+			Name: parameter.feature.name,
+			Min: parameter.min,
+			Max: parameter.max,
 		}
 		output.Features = append(output.Features, feature)
 	}
@@ -832,7 +610,7 @@ func getStrategyMiningResult(
 func createStrategyPlots(
 	symbol string,
 	index int,
-	result dataMiningResult,
+	result backtestData,
 	buyAndHold []equityCurveSample,
 ) (string, string, string) {
 	plotFileName := fmt.Sprintf("%s.strategy%02d.png", symbol, index)
@@ -859,28 +637,18 @@ func createStrategyPlots(
 }
 
 func getTradesRatio(
+	dateMin time.Time,
+	dateMax time.Time,
 	equityCurve []equityCurveSample,
 	intradayRecords []FeatureRecord,
-	miningConfig DataMiningConfiguration,
 ) float64 {
-	equityFirst := equityCurve[0].timestamp
-	equityLast := equityCurve[len(equityCurve) - 1].timestamp
 	recordsFirst := intradayRecords[0].Timestamp
 	recordsLast := intradayRecords[len(intradayRecords) - 1].Timestamp
-	var start, end time.Time
-	if miningConfig.DateMin != nil {
-		start = (*miningConfig.DateMin).Time
-	} else {
-		start = equityFirst
-	}
+	start := dateMin
 	if start.Before(recordsFirst) {
 		start = recordsFirst
 	}
-	if miningConfig.DateMax != nil {
-		end = (*miningConfig.DateMax).Time
-	} else {
-		end = equityLast
-	}
+	end := dateMax
 	if recordsLast.After(end) {
 		end = recordsLast
 	}
@@ -896,7 +664,7 @@ func getTradesRatio(
 	return tradesRatio
 }
 
-func (d *dataMiningResult) disable() {
+func (d *backtestData) disable() {
 	d.enabled = false
 	d.equityCurve = nil
 	d.returnsSamples = nil

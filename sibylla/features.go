@@ -28,7 +28,7 @@ type featureAnalysis struct {
 	combinedFeaturesTotal int
 }
 
-func analyzeFeatureFrequency(assetResults map[string][]dataMiningResult, miningConfig DataMiningConfiguration) featureAnalysis {
+func analyzeFeatureFrequency(assetResults map[string][]backtestData, miningConfig DataMiningConfiguration) featureAnalysis {
 	accessors := getFeatureAccessors()
 	features := []featureStats{}
 	for _, accessor := range accessors {
@@ -51,7 +51,7 @@ func analyzeFeatureFrequency(assetResults map[string][]dataMiningResult, miningC
 		}
 	}
 	for symbol := range assetResults {
-		slices.SortFunc(assetResults[symbol], func (a, b dataMiningResult) int {
+		slices.SortFunc(assetResults[symbol], func (a, b backtestData) int {
 			return compareFloat64(b.riskAdjustedMin, a.riskAdjustedMin)
 		})
 		results := assetResults[symbol]
@@ -62,9 +62,9 @@ func analyzeFeatureFrequency(assetResults map[string][]dataMiningResult, miningC
 			if i >= featureAnalysisLimit {
 				break
 			}
-			for featureIndex, threshold := range result.task {
+			for featureIndex, parameter := range result.conditions {
 				index := slices.IndexFunc(features, func (f featureStats) bool {
-					return f.name == threshold.feature.name
+					return f.name == parameter.feature.name
 				})
 				if index == -1 {
 					continue
@@ -72,8 +72,8 @@ func analyzeFeatureFrequency(assetResults map[string][]dataMiningResult, miningC
 				features[index].counts[featureIndex]++
 			}
 			index := slices.IndexFunc(combinedFeatures, func (c combinedFeatureStats) bool {
-				return c.names[0] == result.task[0].feature.name &&
-					c.names[1] == result.task[1].feature.name
+				return c.names[0] == result.conditions[0].feature.name &&
+					c.names[1] == result.conditions[1].feature.name
 			})
 			if index == -1 {
 				continue

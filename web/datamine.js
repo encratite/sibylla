@@ -23,13 +23,13 @@ function renderDataMiningUI() {
 				className: "equityCurve",
 				onclick: () => showStrategyDetails(strategyName, strategy),
 			});
-			const truncateThreshold = threshold => {
+			const truncateCondition = limit => {
 				const precision = 100;
-				return Math.round(precision * threshold) / precision;
+				return Math.round(precision * limit) / precision;
 			};
 			const features = strategy.features.map(feature => {
-				const min = truncateThreshold(feature.min);
-				const max = truncateThreshold(feature.max);
+				const min = truncateCondition(feature.min);
+				const max = truncateCondition(feature.max);
 				return `${feature.symbol}.${feature.name} (${min}, ${max})`;
 			});
 			const feature1 = features[0];
