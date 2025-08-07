@@ -4,11 +4,15 @@ import (
 	"fmt"
 	"log"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/gammazero/deque"
+	"gonum.org/v1/gonum/stat"
 	"gopkg.in/yaml.v3"
 )
+
+const buyAndHoldSymbol = "ES"
 
 type BacktestConfiguration struct {
 	DateMin SerializableDate `yaml:"dateMin"`
@@ -96,11 +100,15 @@ func Backtest(yamlPath string) {
 	loadConfiguration()
 	loadCurrencies()
 	backtestConfig := loadBacktestConfiguration(yamlPath)
-	symbolsMap := map[string]struct{}{}
+	symbolsMap := map[string]struct{}{
+		buyAndHoldSymbol: {},
+	}
 	for _, strategy := range backtestConfig.Strategies {
 		symbolsMap[strategy.Symbol] = struct{}{}
 		for _, parameter := range strategy.Conditions {
-			symbolsMap[parameter.Feature] = struct{}{}
+			if parameter.Symbol != "" {
+				symbolsMap[parameter.Symbol] = struct{}{}
+			}
 		}
 	}
 	symbols := []string{}
@@ -120,34 +128,84 @@ func Backtest(yamlPath string) {
 	})
 	delta := time.Since(start)
 	fmt.Printf("Performed backtests in %.2f s\n", delta.Seconds())
-	fmt.Printf("\nIS period: %s to %s\n", getDateString(backtestConfig.DateMin.Time), getDateString(backtestConfig.DateSplit.Time))
-	fmt.Printf("OOS period: %s to %s\n", getDateString(backtestConfig.DateSplit.Time), getDateString(backtestConfig.DateMax.Time))
-	fmt.Printf("Number of strategies: %d\n\n", len(backtestConfig.Strategies))
+	riskAdjustedIS := []float64{}
+	riskAdjustedRecentIS := []float64{}
+	riskAdjustedOOS := []float64{}
+	allReturnsSamples := []float64{}
 	for i, comparison := range comparisons {
 		backtest := comparison.completeBacktest
-		condition := backtest.conditions[0]
-		symbol := condition.asset.asset.Symbol
-		feature := condition.feature.name
+		conditionStrings := []string{}
+		for _, condition := range backtest.conditions {
+			symbol := condition.asset.asset.Symbol
+			feature := condition.feature.name
+			min := condition.min
+			max := condition.max
+			output := fmt.Sprintf("%s.%s (%.2f, %.2f)", symbol, feature, min, max)
+			conditionStrings = append(conditionStrings, output)
+		}
+		conditionString := strings.Join(conditionStrings, ", ")
 		side := "long"
 		if backtest.side == SideShort {
 			side = "short"
 		}
-		format := "%d. %s.%s (%.2f, %.2f), %s, %s, %dh\n"
+		format := "%d. %s, %s, %s, %dh\n"
 		fmt.Printf(
 			format,
 			i + 1,
-			symbol,
-			feature,
-			condition.min,
-			condition.max,
+			conditionString,
 			side,
 			getTimeOfDayString(*backtest.timeOfDay),
 			backtest.returns.holdingTime,
 		)
 		fmt.Printf("\tIS RAR:    %.3f\n", comparison.isBacktest.riskAdjusted)
 		fmt.Printf("\tIS RecRAR: %.3f\n", comparison.isBacktest.riskAdjustedRecent)
-		fmt.Printf("\tOOS RAR:   %.3f\n", comparison.oosBacktest.riskAdjusted)
+		fmt.Printf("\tOOS RAR:   %.3f\n\n", comparison.oosBacktest.riskAdjusted)
+		riskAdjustedIS = append(riskAdjustedIS, comparison.isBacktest.riskAdjusted)
+		riskAdjustedRecentIS = append(riskAdjustedRecentIS, comparison.isBacktest.riskAdjustedRecent)
+		riskAdjustedOOS = append(riskAdjustedOOS, comparison.oosBacktest.riskAdjusted)
+		allReturnsSamples = append(allReturnsSamples, comparison.oosBacktest.returnsSamples...)
 	}
+	strategyCount := len(backtestConfig.Strategies)
+	fmt.Printf("IS period: %s to %s\n", getDateString(backtestConfig.DateMin.Time), getDateString(backtestConfig.DateSplit.Time))
+	fmt.Printf("OOS period: %s to %s\n", getDateString(backtestConfig.DateSplit.Time), getDateString(backtestConfig.DateMax.Time))
+	fmt.Printf("Number of strategies: %d\n\n", strategyCount)
+	riskAdjustedCorrelation := stat.Correlation(riskAdjustedIS, riskAdjustedOOS, nil)
+	riskAdjustedRecentCorrelation := stat.Correlation(riskAdjustedRecentIS, riskAdjustedOOS, nil)
+	fmt.Printf("PCC(IS RAR, OOS RAR):    %.3f\n", riskAdjustedCorrelation)
+	fmt.Printf("PCC(IS RecRAR, OOS RAR): %.3f\n\n", riskAdjustedRecentCorrelation)
+	_, buyAndHoldReturnsIS := getBuyAndHold(buyAndHoldSymbol, &backtestConfig.DateMin.Time, &backtestConfig.DateSplit.Time, assetRecords)
+	_, buyAndHoldReturnsOOS := getBuyAndHold(buyAndHoldSymbol, &backtestConfig.DateSplit.Time, &backtestConfig.DateMax.Time, assetRecords)
+	buyAndHoldRiskAdjustedIS := getRiskAdjusted(buyAndHoldReturnsIS)
+	buyAndHoldRiskAdjustedOOS := getRiskAdjusted(buyAndHoldReturnsOOS)
+	allRiskAdjustedOOS := getRiskAdjusted(allReturnsSamples)
+	fmt.Printf("Buy and Hold IS RAR:  %.3f\n", buyAndHoldRiskAdjustedIS)
+	fmt.Printf("Buy and Hold OOS RAR: %.3f\n\n", buyAndHoldRiskAdjustedOOS)
+	meanRiskAdjustedIS := stat.Mean(riskAdjustedIS, nil)
+	meanRiskAdjustedRecentIS := stat.Mean(riskAdjustedRecentIS, nil)
+	meanRiskAdjustedOOS := stat.Mean(riskAdjustedOOS, nil)
+	fmt.Printf("Mean(IS RAR):         %.3f\n", meanRiskAdjustedIS)
+	fmt.Printf("Mean(IS RecRAR):      %.3f\n", meanRiskAdjustedRecentIS)
+	fmt.Printf("Mean(OOS RAR):        %.3f\n\n", meanRiskAdjustedOOS)
+	fmt.Printf("Portfolio OOS RAR:    %.3f\n\n", allRiskAdjustedOOS)
+	outperform := 0
+	underperform := 0
+	loss := 0
+	for _, riskAdjusted := range riskAdjustedOOS {
+		if riskAdjusted > buyAndHoldRiskAdjustedOOS {
+			outperform++
+		} else if riskAdjusted > 0 {
+			underperform++
+		} else {
+			loss++
+		}
+	}
+	outperformPercentage := getPercentageFromInts(outperform, strategyCount)
+	underperformPercentage := getPercentageFromInts(underperform, strategyCount)
+	lossPercentage := getPercentageFromInts(loss, strategyCount)
+	fmt.Printf("OOS performance classifications:\n\n")
+	fmt.Printf("\tOutperform:   %.1f%% (%d samples)\n", outperformPercentage, outperform)
+	fmt.Printf("\tUnderperform: %.1f%% (%d samples)\n", underperformPercentage, underperform)
+	fmt.Printf("\tLoss:         %.1f%% (%d samples)\n\n", lossPercentage, loss)
 }
 
 func loadBacktestConfiguration(path string) BacktestConfiguration {
@@ -427,7 +485,7 @@ func performBacktest(
 			onConditionMatch(record, &tradedAsset.asset, backtestConfig.Leverage, false, &backtest)
 		}
 	}
-	backtest.postProcess(true, backtestConfig.DateMin.Time, backtestConfig.DateMax.Time, intradayRecords)
+	backtest.postProcess(true, true, backtestConfig.DateMin.Time, backtestConfig.DateMax.Time, intradayRecords)
 	return backtest
 }
 
@@ -460,9 +518,9 @@ func onConditionMatch(
 		}
 		cash = lastSample.cash
 	}
-	notionalValue := float64(returnsRecord.Ticks1) * asset.TickValue
 	delta := returnsRecord.Ticks2 - returnsRecord.Ticks1
 	returns := getAssetReturns(backtest.side, record.Timestamp, delta, true, asset)
+	notionalValue := float64(returnsRecord.Ticks1) * asset.TickValue
 	percent := returns / notionalValue
 	factor := 1.0 + percent
 	weekdayIndex := int(record.Timestamp.Weekday()) - 1
@@ -495,6 +553,7 @@ func onConditionMatch(
 
 func (backtest *backtestData) postProcess(
 	setRiskAdjusted bool,
+	preserveReturnsSamples bool,
 	dateMin time.Time,
 	dateMax time.Time,
 	intradayRecords []FeatureRecord,
@@ -522,6 +581,8 @@ func (backtest *backtestData) postProcess(
 		backtest.riskAdjusted = getRiskAdjusted(backtest.returnsSamples)
 		backtest.riskAdjustedMin = slices.Min(segments)
 		backtest.riskAdjustedRecent = segments[len(segments) - 1]
+	}
+	if !preserveReturnsSamples {
 		backtest.returnsSamples = nil
 	}
 }
@@ -548,4 +609,44 @@ func newBacktest(
 		drawdownMax: 0.0,
 		enabled: true,
 	}
+}
+
+func getBuyAndHold(symbol string, dateMin *time.Time, dateMax *time.Time, assets []assetRecords) ([]equityCurveSample, []float64) {
+	equityCurve := []equityCurveSample{}
+	returnsSamples := []float64{}
+	cash := 0.0
+	records, exists := find(assets, func (x assetRecords) bool {
+		return x.asset.Symbol == symbol
+	})
+	if !exists {
+		log.Fatalf("Failed to find matching asset records for buy and hold symbol %s", symbol)
+	}
+	for _, record := range records.intradayRecords {
+		if dateMin != nil && record.Timestamp.Before(*dateMin) {
+			continue
+		}
+		if dateMax != nil && !record.Timestamp.Before(*dateMax) {
+			continue
+		}
+		if record.Timestamp.Hour() != buyAndHoldTimeOfDay || record.Returns24H == nil {
+			continue
+		}
+		side := SideLong
+		if records.asset.ShortBias {
+			side = SideShort
+		}
+		delta := record.Returns24H.Ticks2 - record.Returns24H.Ticks1
+		returns := getAssetReturns(side, record.Timestamp, delta, false, &records.asset)
+		cash += returns
+		sample := equityCurveSample{
+			timestamp: record.Timestamp,
+			cash: cash,
+		}
+		equityCurve = append(equityCurve, sample)
+		notionalValue := float64(record.Returns24H.Ticks1) * records.asset.TickValue
+		percent := returns / notionalValue
+		returnsSamples = append(returnsSamples, percent)
+
+	}
+	return equityCurve, returnsSamples
 }

@@ -265,3 +265,7 @@ func formatMoney(amount int64) string {
 	}
 	return output
 }
+
+func getPercentageFromInts(numerator, denominator int) float64 {
+	return 100.0 * float64(numerator) / float64(denominator)
+}

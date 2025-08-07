@@ -413,7 +413,8 @@ func postProcessBacktests(intradayRecords []FeatureRecord, backtests []backtestD
 			continue
 		}
 		setRiskAdjusted := !miningConfig.isCorrelation()
-		backtest.postProcess(setRiskAdjusted, miningConfig.DateMin.Time, miningConfig.DateMax.Time, intradayRecords)
+		preserveReturnsSamples := !setRiskAdjusted
+		backtest.postProcess(setRiskAdjusted, preserveReturnsSamples, miningConfig.DateMin.Time, miningConfig.DateMax.Time, intradayRecords)
 		if backtest.tradesRatio < miningConfig.TradesRatio {
 			backtest.disable()
 		}
@@ -534,7 +535,7 @@ func getDataMiningModel(
 			Plot: getFileURL(dailyRecordsPlotPath),
 			Strategies: []StrategyMiningResult{},
 		}
-		buyAndHold := getBuyAndHold(symbol, assetRecords)
+		buyAndHold, _ := getBuyAndHold(symbol, nil, nil, assetRecords)
 		for i, result := range results {
 			miningResult := getStrategyMiningResult(symbol, i + 1, result, buyAndHold)
 			assetMiningResults.Strategies = append(assetMiningResults.Strategies, miningResult)
@@ -659,34 +660,4 @@ func (backtest *backtestData) disable() {
 	for i := range backtest.optimizationReturns {
 		backtest.optimizationReturns[i].Clear()
 	}
-}
-
-func getBuyAndHold(symbol string, allRecords []assetRecords) []equityCurveSample {
-	equityCurve := []equityCurveSample{}
-	cash := 0.0
-	index := slices.IndexFunc(allRecords, func (x assetRecords) bool {
-		return x.asset.Symbol == symbol
-	})
-	if index == -1 {
-		log.Fatalf("Failed to find matching asset records for buy and hold symbol %s", symbol)
-	}
-	records := allRecords[index]
-	for _, record := range records.intradayRecords {
-		if record.Timestamp.Hour() != buyAndHoldTimeOfDay || record.Returns24H == nil {
-			continue
-		}
-		side := SideLong
-		if records.asset.ShortBias {
-			side = SideShort
-		}
-		delta := record.Returns24H.Ticks2 - record.Returns24H.Ticks1
-		returns := getAssetReturns(side, record.Timestamp, delta, false, &records.asset)
-		cash += returns
-		sample := equityCurveSample{
-			timestamp: record.Timestamp,
-			cash: cash,
-		}
-		equityCurve = append(equityCurve, sample)
-	}
-	return equityCurve
 }
