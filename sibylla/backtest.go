@@ -476,7 +476,8 @@ func performBacktest(
 		}
 		match := true
 		for _, condition := range conditions {
-			if !condition.match(record) {
+			conditionRecord, exists := condition.asset.recordsMap[record.Timestamp]
+			if !exists || !condition.match(conditionRecord) {
 				match = false
 				break
 			}
