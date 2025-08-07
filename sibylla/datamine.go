@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/cheggaaa/pb"
-	"github.com/gammazero/deque"
 	"gonum.org/v1/gonum/stat"
 	"gopkg.in/yaml.v3"
 )
@@ -330,22 +329,8 @@ func initializeMiningBacktests(task dataMiningTask, miningConfig DataMiningConfi
 				for timeOfDay := miningConfig.TimeMin.Duration;
 					timeOfDay <= miningConfig.TimeMax.Duration;
 					timeOfDay += time.Duration(1) * time.Hour {
-					backtest := backtestData{
-						conditions: task.conditions,
-						returns: returns,
-						side: side,
-						optimizeWeekdays: optimizeWeekdays,
-						timeOfDay: &timeOfDay,
-						equityCurve: []equityCurveSample{},
-						returnsSamples: []float64{},
-						weekdayReturns: [daysPerWeek][]float64{},
-						optimizationReturns: [daysPerWeek]deque.Deque[float64]{},
-						bannedDay: nil,
-						cumulativeReturn: 1.0,
-						cumulativeMax: 1.0,
-						drawdownMax: 0.0,
-						enabled: true,
-					}
+					backtest := newBacktest(side, &timeOfDay, task.conditions, returns)
+					backtest.optimizeWeekdays = optimizeWeekdays
 					for i := range backtest.optimizationReturns {
 						backtest.optimizationReturns[i].SetBaseCap(weekdayOptimizationBuffer + 2)
 					}
@@ -357,14 +342,14 @@ func initializeMiningBacktests(task dataMiningTask, miningConfig DataMiningConfi
 	return backtests
 }
 
-func optimizeWeekdays(percent float64, weekdayIndex int, result *backtestData) {
-	weekdayReturns := &result.optimizationReturns[weekdayIndex]
+func optimizeWeekdays(percent float64, weekdayIndex int, backtest *backtestData) {
+	weekdayReturns := &backtest.optimizationReturns[weekdayIndex]
 	weekdayReturns.PushBack(percent)
 	for weekdayReturns.Len() > weekdayOptimizationBuffer {
 		weekdayReturns.PopFront()
 	}
 	buffersFilled := true
-	for _, x := range result.optimizationReturns {
+	for _, x := range backtest.optimizationReturns {
 		if x.Len() < weekdayOptimizationBuffer {
 			buffersFilled = false
 			break
@@ -372,9 +357,9 @@ func optimizeWeekdays(percent float64, weekdayIndex int, result *backtestData) {
 	}
 	if buffersFilled {
 		weekdayPerformance := [daysPerWeek]float64{}
-		for k := range result.optimizationReturns {
+		for k := range backtest.optimizationReturns {
 			performance := 1.0
-			currentWeekday := result.optimizationReturns[k]
+			currentWeekday := backtest.optimizationReturns[k]
 			for l := 0; l < currentWeekday.Len(); l++ {
 				performance *= 1.0 + currentWeekday.At(l)
 			}
@@ -390,7 +375,7 @@ func optimizeWeekdays(percent float64, weekdayIndex int, result *backtestData) {
 			}
 		}
 		bannedDay := time.Weekday(worstIndex + 1)
-		result.bannedDay = &bannedDay
+		backtest.bannedDay = &bannedDay
 	}
 }
 
@@ -664,15 +649,15 @@ func getTradesRatio(
 	return tradesRatio
 }
 
-func (d *backtestData) disable() {
-	d.enabled = false
-	d.equityCurve = nil
-	d.returnsSamples = nil
-	for i := range d.weekdayReturns {
-		d.weekdayReturns[i] = nil
+func (backtest *backtestData) disable() {
+	backtest.enabled = false
+	backtest.equityCurve = nil
+	backtest.returnsSamples = nil
+	for i := range backtest.weekdayReturns {
+		backtest.weekdayReturns[i] = nil
 	}
-	for i := range d.optimizationReturns {
-		d.optimizationReturns[i].Clear()
+	for i := range backtest.optimizationReturns {
+		backtest.optimizationReturns[i].Clear()
 	}
 }
 

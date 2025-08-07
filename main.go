@@ -32,7 +32,7 @@ func main() {
 		sibylla.DataMine(*dataMine)
 	} else if *correlation != "" {
 		sibylla.OOSCorrelation(*correlation)
-	} else if *correlation != "" {
+	} else if *backtest != "" {
 		sibylla.Backtest(*backtest)
 	} else {
 		flag.Usage()

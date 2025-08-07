@@ -22,12 +22,12 @@ type BacktestStrategy struct {
 	Symbol string `yaml:"symbol"`
 	Side SerializableSide `yaml:"side"`
 	Time SerializableDuration `yaml:"time"`
-	HoldingTime int `yaml:"time"`
+	HoldingTime int `yaml:"holdingTime"`
 	Conditions []StrategyCondition `yaml:"conditions"`
 }
 
 type StrategyCondition struct {
-	Symbol string `yaml:"feature"`
+	Symbol string `yaml:"symbol"`
 	Feature string `yaml:"feature"`
 	Min float64 `yaml:"min"`
 	Max float64 `yaml:"max"`
@@ -86,6 +86,12 @@ type equityCurveSample struct {
 	cash float64
 }
 
+type backtestComparison struct {
+	isBacktest backtestData
+	oosBacktest backtestData
+	completeBacktest backtestData
+}
+
 func Backtest(yamlPath string) {
 	loadConfiguration()
 	loadCurrencies()
@@ -108,11 +114,39 @@ func Backtest(yamlPath string) {
 		nil,
 		nil,
 	)
-	backtests := parallelMap(backtestConfig.Strategies, func (strategy BacktestStrategy) backtestData {
+	start := time.Now()
+	comparisons := parallelMap(backtestConfig.Strategies, func (strategy BacktestStrategy) backtestComparison {
 		return executeStrategy(strategy, assetRecords, backtestConfig)
 	})
-	for i, backtest := range backtests {
-		fmt.Printf("%d. RAR: %.2f\n", i + 1, backtest.riskAdjusted)
+	delta := time.Since(start)
+	fmt.Printf("Performed backtests in %.2f s\n", delta.Seconds())
+	fmt.Printf("\nIS period: %s to %s\n", getDateString(backtestConfig.DateMin.Time), getDateString(backtestConfig.DateSplit.Time))
+	fmt.Printf("OOS period: %s to %s\n", getDateString(backtestConfig.DateSplit.Time), getDateString(backtestConfig.DateMax.Time))
+	fmt.Printf("Number of strategies: %d\n\n", len(backtestConfig.Strategies))
+	for i, comparison := range comparisons {
+		backtest := comparison.completeBacktest
+		condition := backtest.conditions[0]
+		symbol := condition.asset.asset.Symbol
+		feature := condition.feature.name
+		side := "long"
+		if backtest.side == SideShort {
+			side = "short"
+		}
+		format := "%d. %s.%s (%.2f, %.2f), %s, %s, %dh\n"
+		fmt.Printf(
+			format,
+			i + 1,
+			symbol,
+			feature,
+			condition.min,
+			condition.max,
+			side,
+			getTimeOfDayString(*backtest.timeOfDay),
+			backtest.returns.holdingTime,
+		)
+		fmt.Printf("\tIS RAR:    %.3f\n", comparison.isBacktest.riskAdjusted)
+		fmt.Printf("\tIS RecRAR: %.3f\n", comparison.isBacktest.riskAdjustedRecent)
+		fmt.Printf("\tOOS RAR:   %.3f\n", comparison.oosBacktest.riskAdjusted)
 	}
 }
 
@@ -334,30 +368,51 @@ func isValidTime(timestamp time.Time, timeMin *SerializableDuration, timeMax *Se
 	return true
 }
 
-func executeStrategy(strategy BacktestStrategy, assets []assetRecords, backtestConfig BacktestConfiguration) backtestData {
+func executeStrategy(strategy BacktestStrategy, assets []assetRecords, backtestConfig BacktestConfiguration) backtestComparison {
 	strategyRecords := strategy.getStrategyAssets(assets)
 	conditions := strategy.getConditions(strategyRecords)
 	tradedAsset := strategyRecords[0]
 	intradayRecords := tradedAsset.intradayRecords
 	returnsAccessor := strategy.getReturnsAccessor()
-	result := backtestData{
-		conditions: conditions,
-		returns: returnsAccessor,
-		side: strategy.Side.PositionSide,
-		optimizeWeekdays: false,
-		timeOfDay: &strategy.Time.Duration,
-		equityCurve: []equityCurveSample{},
-		returnsSamples: []float64{},
-		weekdayReturns: [daysPerWeek][]float64{},
-		optimizationReturns: [daysPerWeek]deque.Deque[float64]{},
-		bannedDay: nil,
-		cumulativeReturn: 1.0,
-		cumulativeMax: 1.0,
-		drawdownMax: 0.0,
-		enabled: true,
+	perform := func (dateMin, dateMax time.Time) backtestData {
+		return performBacktest(
+			dateMin,
+			dateMax,
+			returnsAccessor,
+			intradayRecords,
+			tradedAsset,
+			conditions,
+			strategy,
+			backtestConfig,
+		)
 	}
+	isBacktest := perform(backtestConfig.DateMin.Time, backtestConfig.DateSplit.Time)
+	oosBacktest := perform(backtestConfig.DateSplit.Time, backtestConfig.DateMax.Time)
+	completeBacktest := perform(backtestConfig.DateMin.Time, backtestConfig.DateMax.Time)
+	output := backtestComparison{
+		isBacktest: isBacktest,
+		oosBacktest: oosBacktest,
+		completeBacktest: completeBacktest,
+	}
+	return output
+}
+
+func performBacktest(
+	dateMin time.Time,
+	dateMax time.Time,
+	returns returnsAccessor,
+	intradayRecords []FeatureRecord,
+	tradedAsset assetRecords,
+	conditions []strategyCondition,
+	strategy BacktestStrategy,
+	backtestConfig BacktestConfiguration,
+) backtestData {
+	backtest := newBacktest(strategy.Side.PositionSide, &strategy.Time.Duration, conditions, returns)
 	for i := range intradayRecords {
 		record := &intradayRecords[i]
+		if record.Timestamp.Before(dateMin) || !record.Timestamp.Before(dateMax) {
+			continue
+		}
 		if !record.hasReturns() {
 			continue
 		}
@@ -369,11 +424,11 @@ func executeStrategy(strategy BacktestStrategy, assets []assetRecords, backtestC
 			}
 		}
 		if match {
-			onConditionMatch(record, &tradedAsset.asset, backtestConfig.Leverage, false, &result)
+			onConditionMatch(record, &tradedAsset.asset, backtestConfig.Leverage, false, &backtest)
 		}
 	}
-	result.postProcess(false, backtestConfig.DateMin.Time, backtestConfig.DateMax.Time, intradayRecords)
-	return result
+	backtest.postProcess(true, backtestConfig.DateMin.Time, backtestConfig.DateMax.Time, intradayRecords)
+	return backtest
 }
 
 func onConditionMatch(
@@ -381,25 +436,25 @@ func onConditionMatch(
 	asset *Asset,
 	leverage *float64,
 	addTimestamp bool,
-	result *backtestData,
+	backtest *backtestData,
 ) {
-	if result.timeOfDay != nil {
+	if backtest.timeOfDay != nil {
 		timeOfDay := getTimeOfDay(record.Timestamp)
-		if timeOfDay != *result.timeOfDay {
+		if timeOfDay != *backtest.timeOfDay {
 			return
 		}
 	}
-	returnsRecord := result.returns.get(record)
+	returnsRecord := backtest.returns.get(record)
 	if returnsRecord == nil {
 		return
 	}
 	cash := 0.0
-	equityCurve := &result.equityCurve
+	equityCurve := &backtest.equityCurve
 	length := len(*equityCurve)
 	if length > 0 {
 		lastSample := &(*equityCurve)[length - 1]
 		duration := record.Timestamp.Sub(lastSample.timestamp)
-		holdingTime := time.Duration(result.returns.holdingTime) * time.Hour
+		holdingTime := time.Duration(backtest.returns.holdingTime) * time.Hour
 		if duration < holdingTime {
 			return
 		}
@@ -407,13 +462,13 @@ func onConditionMatch(
 	}
 	notionalValue := float64(returnsRecord.Ticks1) * asset.TickValue
 	delta := returnsRecord.Ticks2 - returnsRecord.Ticks1
-	returns := getAssetReturns(result.side, record.Timestamp, delta, true, asset)
+	returns := getAssetReturns(backtest.side, record.Timestamp, delta, true, asset)
 	percent := returns / notionalValue
 	factor := 1.0 + percent
 	weekdayIndex := int(record.Timestamp.Weekday()) - 1
-	bannedDay := result.bannedDay
-	if result.optimizeWeekdays {
-		optimizeWeekdays(percent, weekdayIndex, result)
+	bannedDay := backtest.bannedDay
+	if backtest.optimizeWeekdays {
+		optimizeWeekdays(percent, weekdayIndex, backtest)
 	}
 	if bannedDay != nil && record.Timestamp.Weekday() == *bannedDay {
 		return
@@ -427,46 +482,70 @@ func onConditionMatch(
 		cash: cash,
 	}
 	*equityCurve = append(*equityCurve, sample)
-	result.returnsSamples = append(result.returnsSamples, percent)
+	backtest.returnsSamples = append(backtest.returnsSamples, percent)
 	if addTimestamp {
-		result.returnsTimestamps = append(result.returnsTimestamps, record.Timestamp)
+		backtest.returnsTimestamps = append(backtest.returnsTimestamps, record.Timestamp)
 	}
-	result.weekdayReturns[weekdayIndex] = append(result.weekdayReturns[weekdayIndex], percent)
-	result.cumulativeReturn *= factor
-	result.cumulativeMax = max(result.cumulativeMax, result.cumulativeReturn)
-	drawdown := 1.0 - result.cumulativeReturn / result.cumulativeMax
-	result.drawdownMax = max(result.drawdownMax, drawdown)
+	backtest.weekdayReturns[weekdayIndex] = append(backtest.weekdayReturns[weekdayIndex], percent)
+	backtest.cumulativeReturn *= factor
+	backtest.cumulativeMax = max(backtest.cumulativeMax, backtest.cumulativeReturn)
+	drawdown := 1.0 - backtest.cumulativeReturn / backtest.cumulativeMax
+	backtest.drawdownMax = max(backtest.drawdownMax, drawdown)
 }
 
-func (result *backtestData) postProcess(
+func (backtest *backtestData) postProcess(
 	setRiskAdjusted bool,
 	dateMin time.Time,
 	dateMax time.Time,
 	intradayRecords []FeatureRecord,
 ) {
-	result.tradesRatio = getTradesRatio(
+	backtest.tradesRatio = getTradesRatio(
 		dateMin,
 		dateMax,
-		result.equityCurve,
+		backtest.equityCurve,
 		intradayRecords,
 	)
 	if setRiskAdjusted {
-		segmentSize := len(result.returnsSamples) / riskAdjustedSegments
+		segmentSize := len(backtest.returnsSamples) / riskAdjustedSegments
 		segments := []float64{}
 		for j := range riskAdjustedSegments {
 			jNext := j + 1
 			offset := j * segmentSize
 			end := jNext * segmentSize
 			if jNext == riskAdjustedSegments {
-				end = len(result.returnsSamples)
+				end = len(backtest.returnsSamples)
 			}
-			samples := result.returnsSamples[offset:end]
+			samples := backtest.returnsSamples[offset:end]
 			riskAdjusted := getRiskAdjusted(samples)
 			segments = append(segments, riskAdjusted)
 		}
-		result.riskAdjusted = getRiskAdjusted(result.returnsSamples)
-		result.riskAdjustedMin = slices.Min(segments)
-		result.riskAdjustedRecent = segments[len(segments) - 1]
-		result.returnsSamples = nil
+		backtest.riskAdjusted = getRiskAdjusted(backtest.returnsSamples)
+		backtest.riskAdjustedMin = slices.Min(segments)
+		backtest.riskAdjustedRecent = segments[len(segments) - 1]
+		backtest.returnsSamples = nil
+	}
+}
+
+func newBacktest(
+	side PositionSide,
+	timeOfDay *time.Duration,
+	conditions []strategyCondition,
+	returns returnsAccessor,
+) backtestData {
+	return backtestData{
+		conditions: conditions,
+		returns: returns,
+		side: side,
+		optimizeWeekdays: false,
+		timeOfDay: timeOfDay,
+		equityCurve: []equityCurveSample{},
+		returnsSamples: []float64{},
+		weekdayReturns: [daysPerWeek][]float64{},
+		optimizationReturns: [daysPerWeek]deque.Deque[float64]{},
+		bannedDay: nil,
+		cumulativeReturn: 1.0,
+		cumulativeMax: 1.0,
+		drawdownMax: 0.0,
+		enabled: true,
 	}
 }

@@ -69,10 +69,10 @@ func (w *weekdayOptimizationCategory) print() {
 	w.optimized.print(w.category)
 }
 
-func (w *weekdayOptimizationStats) submit(result *backtestData) {
-	w.riskAdjusted = append(w.riskAdjusted, result.riskAdjusted)
-	w.riskAdjustedMin = append(w.riskAdjustedMin, result.riskAdjustedMin)
-	w.riskAdjustedRecent = append(w.riskAdjustedRecent, result.riskAdjustedRecent)
+func (w *weekdayOptimizationStats) submit(backtest *backtestData) {
+	w.riskAdjusted = append(w.riskAdjusted, backtest.riskAdjusted)
+	w.riskAdjustedMin = append(w.riskAdjustedMin, backtest.riskAdjustedMin)
+	w.riskAdjustedRecent = append(w.riskAdjustedRecent, backtest.riskAdjustedRecent)
 }
 
 func (w *weekdayOptimizationStats) print(category string) {
