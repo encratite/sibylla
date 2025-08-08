@@ -100,6 +100,18 @@ type backtestComparison struct {
 	completeBacktest backtestData
 }
 
+type riskAdjustedData struct {
+	riskAdjustedIS []float64
+	riskAdjustedRecentIS []float64
+	riskAdjustedOOS []float64
+	allReturnsSamples []float64
+}
+
+type monthlyEquityKey struct {
+	year int
+	month int
+}
+
 func Backtest(yamlPath string) {
 	loadConfiguration()
 	loadCurrencies()
@@ -132,6 +144,13 @@ func Backtest(yamlPath string) {
 	})
 	delta := time.Since(start)
 	fmt.Printf("Performed backtests in %.2f s\n", delta.Seconds())
+	buyAndHoldEquityCurve, _ := getBuyAndHold(buyAndHoldSymbol, &backtestConfig.DateMin.Time, &backtestConfig.DateMax.Time, assetRecords)
+	buyAndHoldPerformance := getPerformanceByMonth(backtestConfig.DateMin.Time, backtestConfig.DateMax.Time, buyAndHoldEquityCurve)
+	riskAdjustedData := getRiskAdjustedData(comparisons, buyAndHoldPerformance, backtestConfig)
+	printStats(riskAdjustedData, assetRecords, backtestConfig)
+}
+
+func getRiskAdjustedData(comparisons []backtestComparison, buyAndHoldPerformance []float64, backtestConfig BacktestConfiguration) riskAdjustedData {
 	riskAdjustedIS := []float64{}
 	riskAdjustedRecentIS := []float64{}
 	riskAdjustedOOS := []float64{}
@@ -166,36 +185,60 @@ func Backtest(yamlPath string) {
 			getTimeOfDayString(*backtest.timeOfDay),
 			backtest.returns.holdingTime,
 		)
-		fmt.Printf("\tIS RAR:    %.3f\n", comparison.isBacktest.riskAdjusted)
-		fmt.Printf("\tIS RecRAR: %.3f\n", comparison.isBacktest.riskAdjustedRecent)
-		fmt.Printf("\tOOS RAR:   %.3f\n\n", comparison.oosBacktest.riskAdjusted)
+		performance := getPerformanceByMonth(backtestConfig.DateMin.Time, backtestConfig.DateMax.Time, comparison.completeBacktest.equityCurve)
+		performanceCorrelation := stat.Correlation(performance, buyAndHoldPerformance, nil)
+		fmt.Printf("\tIS RAR:              %.3f\n", comparison.isBacktest.riskAdjusted)
+		fmt.Printf("\tIS RecRAR:           %.3f\n", comparison.isBacktest.riskAdjustedRecent)
+		fmt.Printf("\tOOS RAR:             %.3f\n", comparison.oosBacktest.riskAdjusted)
+		fmt.Printf("\tMarket correlation:  %.3f\n\n", performanceCorrelation)
 		riskAdjustedIS = append(riskAdjustedIS, comparison.isBacktest.riskAdjusted)
 		riskAdjustedRecentIS = append(riskAdjustedRecentIS, comparison.isBacktest.riskAdjustedRecent)
 		riskAdjustedOOS = append(riskAdjustedOOS, comparison.oosBacktest.riskAdjusted)
 		allReturnsSamples = append(allReturnsSamples, comparison.oosBacktest.returnsSamples...)
 	}
+	return riskAdjustedData{
+		riskAdjustedIS: riskAdjustedIS,
+		riskAdjustedRecentIS: riskAdjustedRecentIS,
+		riskAdjustedOOS: riskAdjustedOOS,
+		allReturnsSamples: allReturnsSamples,
+	}
+}
+
+func printStats(
+	riskAdjustedData riskAdjustedData,
+	assetRecords []assetRecords,
+	backtestConfig BacktestConfiguration,
+) {
 	strategyCount := len(backtestConfig.Strategies)
 	fmt.Printf("IS period: %s to %s\n", getDateString(backtestConfig.DateMin.Time), getDateString(backtestConfig.DateSplit.Time))
 	fmt.Printf("OOS period: %s to %s\n", getDateString(backtestConfig.DateSplit.Time), getDateString(backtestConfig.DateMax.Time))
 	fmt.Printf("Number of strategies: %d\n\n", strategyCount)
-	riskAdjustedCorrelation := stat.Correlation(riskAdjustedIS, riskAdjustedOOS, nil)
-	riskAdjustedRecentCorrelation := stat.Correlation(riskAdjustedRecentIS, riskAdjustedOOS, nil)
+	riskAdjustedCorrelation := stat.Correlation(riskAdjustedData.riskAdjustedIS, riskAdjustedData.riskAdjustedOOS, nil)
+	riskAdjustedRecentCorrelation := stat.Correlation(riskAdjustedData.riskAdjustedRecentIS, riskAdjustedData.riskAdjustedOOS, nil)
 	fmt.Printf("PCC(IS RAR, OOS RAR):    %.3f\n", riskAdjustedCorrelation)
 	fmt.Printf("PCC(IS RecRAR, OOS RAR): %.3f\n\n", riskAdjustedRecentCorrelation)
 	_, buyAndHoldReturnsIS := getBuyAndHold(buyAndHoldSymbol, &backtestConfig.DateMin.Time, &backtestConfig.DateSplit.Time, assetRecords)
 	_, buyAndHoldReturnsOOS := getBuyAndHold(buyAndHoldSymbol, &backtestConfig.DateSplit.Time, &backtestConfig.DateMax.Time, assetRecords)
 	buyAndHoldRiskAdjustedIS := getRiskAdjusted(buyAndHoldReturnsIS)
 	buyAndHoldRiskAdjustedOOS := getRiskAdjusted(buyAndHoldReturnsOOS)
-	allRiskAdjustedOOS := getRiskAdjusted(allReturnsSamples)
+	allRiskAdjustedOOS := getRiskAdjusted(riskAdjustedData.allReturnsSamples)
 	fmt.Printf("Buy and Hold IS RAR:  %.3f\n", buyAndHoldRiskAdjustedIS)
 	fmt.Printf("Buy and Hold OOS RAR: %.3f\n\n", buyAndHoldRiskAdjustedOOS)
-	meanRiskAdjustedIS := stat.Mean(riskAdjustedIS, nil)
-	meanRiskAdjustedRecentIS := stat.Mean(riskAdjustedRecentIS, nil)
-	meanRiskAdjustedOOS := stat.Mean(riskAdjustedOOS, nil)
+	meanRiskAdjustedIS := stat.Mean(riskAdjustedData.riskAdjustedIS, nil)
+	meanRiskAdjustedRecentIS := stat.Mean(riskAdjustedData.riskAdjustedRecentIS, nil)
+	meanRiskAdjustedOOS := stat.Mean(riskAdjustedData.riskAdjustedOOS, nil)
 	fmt.Printf("Mean(IS RAR):         %.3f\n", meanRiskAdjustedIS)
 	fmt.Printf("Mean(IS RecRAR):      %.3f\n", meanRiskAdjustedRecentIS)
 	fmt.Printf("Mean(OOS RAR):        %.3f\n\n", meanRiskAdjustedOOS)
 	fmt.Printf("Portfolio OOS RAR:    %.3f\n\n", allRiskAdjustedOOS)
+	printClassifications(buyAndHoldRiskAdjustedOOS, riskAdjustedData.riskAdjustedOOS, strategyCount)
+}
+
+func printClassifications(
+	buyAndHoldRiskAdjustedOOS float64,
+	riskAdjustedOOS []float64,
+	strategyCount int,
+) {
 	outperform := 0
 	underperform := 0
 	loss := 0
@@ -673,4 +716,41 @@ func getBuyAndHold(symbol string, dateMin *time.Time, dateMax *time.Time, assets
 
 	}
 	return equityCurve, returnsSamples
+}
+
+func newMonthlyEquityKey(timestamp time.Time) monthlyEquityKey {
+	return monthlyEquityKey{
+		year: timestamp.Year(),
+		month: int(timestamp.Month()),
+	}
+}
+
+func getPerformanceByMonth(dateMin time.Time, dateMax time.Time, equityCurve []equityCurveSample) []float64 {
+	const initialCash = 50000.0
+	cashMap := map[monthlyEquityKey]equityCurveSample{}
+	for _, sample := range equityCurve {
+		key := newMonthlyEquityKey(sample.timestamp)
+		mapSample, exists := cashMap[key]
+		if exists && sample.timestamp.Before(mapSample.timestamp) {
+			continue
+		}
+		cashMap[key] = sample
+	}
+	cash := initialCash
+	output := []float64{}
+	for date := dateMin; date.Before(dateMax); date = date.AddDate(0, 1, 0) {
+		key := newMonthlyEquityKey(date)
+		mapSample, exists := cashMap[key]
+		returns := 0.0
+		if exists {
+			newCash := initialCash + mapSample.cash
+			r, valid := getRateOfChange(newCash, cash)
+			if valid {
+				returns = r
+			}
+			cash = newCash
+		}
+		output = append(output, returns)
+	}
+	return output
 }
