@@ -21,6 +21,10 @@ type SerializableSide struct {
 	PositionSide
 }
 
+type SerializableWeekday struct {
+	time.Weekday
+}
+
 func (d *SerializableDate) UnmarshalYAML(value *yaml.Node) error {
 	date, err := getDateErr(value.Value)
 	if err != nil {
@@ -52,6 +56,24 @@ func (s *SerializableSide) UnmarshalYAML(value *yaml.Node) error {
 		s.PositionSide = SideShort
 	default:
 		return fmt.Errorf("invalid position side string \"%s\"", value.Value)
+	}
+	return nil
+}
+
+func (w *SerializableWeekday) UnmarshalYAML(value *yaml.Node) error {
+	switch value.Value {
+	case "Monday":
+		w.Weekday = time.Monday
+	case "Tuesday":
+		w.Weekday = time.Tuesday
+	case "Wednesday":
+		w.Weekday = time.Wednesday
+	case "Thursday":
+		w.Weekday = time.Thursday
+	case "Friday":
+		w.Weekday = time.Friday
+	default:
+		return fmt.Errorf("invalid weekday string \"%s\"", value.Value)
 	}
 	return nil
 }

@@ -25,6 +25,7 @@ type BacktestConfiguration struct {
 type BacktestStrategy struct {
 	Symbol string `yaml:"symbol"`
 	Side SerializableSide `yaml:"side"`
+	Weekday *SerializableWeekday `yaml:"weekday"`
 	Time SerializableDuration `yaml:"time"`
 	HoldingTime int `yaml:"holdingTime"`
 	Conditions []StrategyCondition `yaml:"conditions"`
@@ -137,16 +138,21 @@ func Backtest(yamlPath string) {
 	allReturnsSamples := []float64{}
 	for i, comparison := range comparisons {
 		backtest := comparison.completeBacktest
+		var conditionString string
+		if backtest.weekday == nil {
 		conditionStrings := []string{}
-		for _, condition := range backtest.conditions {
-			symbol := condition.asset.asset.Symbol
-			feature := condition.feature.name
-			min := condition.min
-			max := condition.max
-			output := fmt.Sprintf("%s.%s (%.2f, %.2f)", symbol, feature, min, max)
-			conditionStrings = append(conditionStrings, output)
+			for _, condition := range backtest.conditions {
+				symbol := condition.asset.asset.Symbol
+				feature := condition.feature.name
+				min := condition.min
+				max := condition.max
+				output := fmt.Sprintf("%s.%s (%.2f, %.2f)", symbol, feature, min, max)
+				conditionStrings = append(conditionStrings, output)
+			}
+			conditionString = strings.Join(conditionStrings, ", ")
+		} else {
+			conditionString = fmt.Sprintf("%s, %s", backtest.symbol, backtest.weekday.String())
 		}
-		conditionString := strings.Join(conditionStrings, ", ")
 		side := "long"
 		if backtest.side == SideShort {
 			side = "short"
@@ -236,16 +242,18 @@ func (c *BacktestConfiguration) validate() {
 }
 
 func (s *BacktestStrategy) validate() {
-	firstSymbol := s.Conditions[0].Symbol
-	if firstSymbol != "" {
-		log.Fatalf("The first symbol must be empty, encountered \"%s\" instead", firstSymbol)
-	}
-	if len(s.Conditions) == 0 {
-		log.Fatal("No conditions defined for strategy")
-	}
-	for i, condition := range s.Conditions {
-		first := i == 0
-		condition.validate(first)
+	if s.Weekday == nil {
+		firstSymbol := s.Conditions[0].Symbol
+		if firstSymbol != "" {
+			log.Fatalf("The first symbol must be empty, encountered \"%s\" instead", firstSymbol)
+		}
+		if len(s.Conditions) == 0 {
+			log.Fatal("No conditions defined for strategy")
+		}
+		for i, condition := range s.Conditions {
+			first := i == 0
+			condition.validate(first)
+		}
 	}
 }
 
@@ -468,8 +476,8 @@ func performBacktest(
 	strategy BacktestStrategy,
 	backtestConfig BacktestConfiguration,
 ) backtestData {
-	symbol := conditions[0].asset.asset.Symbol
-	backtest := newBacktest(symbol, strategy.Side.PositionSide, &strategy.Time.Duration, conditions, returns)
+	backtest := newBacktest(strategy.Symbol, strategy.Side.PositionSide, &strategy.Time.Duration, conditions, returns)
+	backtest.weekday = &strategy.Weekday.Weekday
 	for i := range intradayRecords {
 		record := &intradayRecords[i]
 		if record.Timestamp.Before(dateMin) || !record.Timestamp.Before(dateMax) {
@@ -479,12 +487,19 @@ func performBacktest(
 			continue
 		}
 		match := true
-		for _, condition := range conditions {
-			conditionRecord, exists := condition.asset.recordsMap[record.Timestamp]
-			if !exists || !condition.match(conditionRecord) {
-				match = false
-				break
+		if backtest.weekday == nil {
+			for _, condition := range conditions {
+				conditionRecord, exists := condition.asset.recordsMap[record.Timestamp]
+				if !exists || !condition.match(conditionRecord) {
+					match = false
+					break
+				}
 			}
+		} else {
+			weekdayMatch := record.Timestamp.Weekday() == *backtest.weekday
+			timeOfDay := getTimeOfDay(record.Timestamp)
+			timeOfDayMatch := timeOfDay == *backtest.timeOfDay
+			match = weekdayMatch && timeOfDayMatch
 		}
 		if match {
 			onConditionMatch(record, &tradedAsset.asset, backtestConfig.Leverage, false, &backtest)
