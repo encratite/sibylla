@@ -28,7 +28,10 @@ type featureAnalysis struct {
 	combinedFeaturesTotal int
 }
 
-func analyzeFeatureFrequency(assetResults map[string][]backtestData, miningConfig DataMiningConfiguration) featureAnalysis {
+func analyzeFeatureFrequency(assetResults map[string][]backtestData, miningConfig DataMiningConfiguration) *featureAnalysis {
+	if miningConfig.SeasonalityMode {
+		return nil
+	}
 	accessors := getFeatureAccessors()
 	features := []featureStats{}
 	for _, accessor := range accessors {
@@ -90,7 +93,7 @@ func analyzeFeatureFrequency(assetResults map[string][]backtestData, miningConfi
 	if enableFeatureAnalysis {
 		printFeatureFrequency(analysis, miningConfig)
 	}
-	return analysis
+	return &analysis
 }
 
 func printFeatureFrequency(analysis featureAnalysis, miningConfig DataMiningConfiguration) {
@@ -133,7 +136,10 @@ func printFeatureFrequency(analysis featureAnalysis, miningConfig DataMiningConf
 	log.Fatal("Analysis concluded")
 }
 
-func getFeatureModel(analysis featureAnalysis) FeatureAnalysis {
+func getFeatureModel(analysis *featureAnalysis) *FeatureAnalysis {
+	if analysis == nil {
+		return nil
+	}
 	features := analysis.features
 	combinedFeatures := analysis.combinedFeatures
 	featureFrequencies := []FeatureFrequency{}
@@ -169,5 +175,5 @@ func getFeatureModel(analysis featureAnalysis) FeatureAnalysis {
 		Features: featureFrequencies,
 		Combinations: combinations,
 	}
-	return model
+	return &model
 }

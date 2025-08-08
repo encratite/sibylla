@@ -3,8 +3,10 @@ function renderDataMiningUI() {
 	const container = createElement("div", document.body, {
 		className: "containerDataMine"
 	});
-	const featuresContainer = createElement("div", container);
-	renderFeatures(model.features, featuresContainer);
+	if (model.features !== null) {
+		const featuresContainer = createElement("div", container);
+		renderFeatures(model.features, featuresContainer);
+	}
 	model.results.forEach(asset => {
 		const header = createElement("h1", container);
 		header.textContent = `${asset.symbol} (${asset.strategies.length} Strategies)`;
@@ -32,8 +34,6 @@ function renderDataMiningUI() {
 				const max = truncateCondition(feature.max);
 				return `${feature.symbol}.${feature.name} (${min}, ${max})`;
 			});
-			const feature1 = features[0];
-			const feature2 = features[0] !== features[1] ? features[1] : "-";
 			const side = strategy.side === 0 ? "Long" : "Short";
 			let options = [];
 			if (strategy.optimizeWeekdays === true) {
@@ -48,14 +48,28 @@ function renderDataMiningUI() {
 			const holdingTimeMatch = holdingTimePattern.exec(strategy.exit);
 			const holdingTimeHours = parseInt(holdingTimeMatch[0]);
 			const holdingTime = `${holdingTimeHours}h`;
-			const cells1 = [
-				["Feature 1", feature1, false],
-				["Feature 2", feature2, false],
-				["Side", side, false],
-				["Entry", timeOfDay, false],
-				["Holding Time", holdingTime, false],
-				["Options", optionsString, false],
-			];
+			let cells1;
+			if (model.seasonalityMode === true) {
+				cells1 = [
+					["Side", side, false],
+					["Weekday", getWeekdayString(strategy.weekday), false],
+					["Entry", timeOfDay, false],
+					["Holding Time", holdingTime, false],
+					["", "", false],
+					["", "", false],
+				];
+			} else {
+				const feature1 = features[0];
+				const feature2 = features[0] !== features[1] ? features[1] : "-";
+				cells1 = [
+					["Feature 1", feature1, false],
+					["Feature 2", feature2, false],
+					["Side", side, false],
+					["Entry", timeOfDay, false],
+					["Holding Time", holdingTime, false],
+					["Options", optionsString, false],
+				];
+			}
 			const cells2 = [
 				["Returns", formatMoney(strategy.returns), true],
 				getRiskAdjusted("RAR", strategy.riskAdjusted),
@@ -98,6 +112,21 @@ function renderDataMiningUI() {
 			equityCurveCell.appendChild(equityCurve);
 		});
 	});
+}
+
+function getWeekdayString(weekday) {
+	const weekdays = [
+		"Monday",
+		"Tuesday",
+		"Wednesday",
+		"Thursday",
+		"Friday"
+	];
+	const index = weekday - 1;
+	if (index < 0 || index >= weekdays.length) {
+		throw new Error(`Invalid weekday: ${weekday}`);
+	}
+	return weekdays[index];
 }
 
 function renderFeatures(features, container) {

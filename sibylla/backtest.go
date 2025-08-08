@@ -64,6 +64,7 @@ type strategyCondition struct {
 }
 
 type backtestData struct {
+	symbol string
 	conditions []strategyCondition
 	returns returnsAccessor
 	side PositionSide
@@ -83,6 +84,8 @@ type backtestData struct {
 	cumulativeMax float64
 	drawdownMax float64
 	enabled bool
+	seasonalityMode bool
+	weekday *time.Weekday
 }
 
 type equityCurveSample struct {
@@ -465,7 +468,8 @@ func performBacktest(
 	strategy BacktestStrategy,
 	backtestConfig BacktestConfiguration,
 ) backtestData {
-	backtest := newBacktest(strategy.Side.PositionSide, &strategy.Time.Duration, conditions, returns)
+	symbol := conditions[0].asset.asset.Symbol
+	backtest := newBacktest(symbol, strategy.Side.PositionSide, &strategy.Time.Duration, conditions, returns)
 	for i := range intradayRecords {
 		record := &intradayRecords[i]
 		if record.Timestamp.Before(dateMin) || !record.Timestamp.Before(dateMax) {
@@ -589,12 +593,14 @@ func (backtest *backtestData) postProcess(
 }
 
 func newBacktest(
+	symbol string,
 	side PositionSide,
 	timeOfDay *time.Duration,
 	conditions []strategyCondition,
 	returns returnsAccessor,
 ) backtestData {
 	return backtestData{
+		symbol: symbol,
 		conditions: conditions,
 		returns: returns,
 		side: side,

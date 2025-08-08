@@ -41,6 +41,7 @@ type DataMiningConfiguration struct {
 	Conditions ConditionConfiguration `yaml:"conditions"`
 	Leverage *float64 `yaml:"leverage"`
 	SingleFeature bool `yaml:"singleFeature"`
+	SeasonalityMode bool `yaml:"seasonalityMode"`
 	CorrelationSplits []SerializableDate `yaml:"correlationSplits"`
 	StrategyRatio *float64 `yaml:"strategyRatio"`
 }
@@ -61,9 +62,10 @@ type DataMiningModel struct {
 	TimeMin string `json:"timeMin"`
 	TimeMax string `json:"timeMax"`
 	OptimizeWeekdays bool `json:"optimizeWeeks"`
-	Conditions DataMiningConditions `json:"conditions"`
+	Conditions *DataMiningConditions `json:"conditions"`
 	Results []AssetMiningResults `json:"results"`
-	Features FeatureAnalysis `json:"features"`
+	Features *FeatureAnalysis `json:"features"`
+	SeasonalityMode bool `json:"seasonalityMode"`
 }
 
 type DataMiningConditions struct {
@@ -80,6 +82,7 @@ type AssetMiningResults struct {
 type StrategyMiningResult struct {
 	Side int `json:"side"`
 	OptimizeWeekdays bool `json:"optimizeWeekdays"`
+	Weekday *int `json:"weekday"`
 	TimeOfDay *string `json:"timeOfDay"`
 	Features []StrategyFeature `json:"features"`
 	Exit string `json:"exit"`
@@ -113,6 +116,12 @@ type FeatureAnalysis struct {
 
 type dataMiningTask struct {
 	conditions []strategyCondition
+	seasonality *seasonalityTask
+}
+
+type seasonalityTask struct {
+	asset assetRecords
+	weekday time.Weekday
 }
 
 func DataMine(yamlPath string) {
@@ -150,6 +159,31 @@ func executeDataMiningConfig(miningConfig DataMiningConfiguration) ([][]backtest
 }
 
 func getDataMiningTasks(assetRecords []assetRecords, miningConfig DataMiningConfiguration) []dataMiningTask {
+	if miningConfig.SeasonalityMode {
+		return getSeasonalityMiningTasks(assetRecords)
+	} else {
+		return getFeatureMiningTasks(assetRecords, miningConfig)
+	}
+}
+
+func getSeasonalityMiningTasks(assetRecords []assetRecords) []dataMiningTask {
+	tasks := []dataMiningTask{}
+	for _, asset := range assetRecords {
+		for weekday := time.Monday; weekday <= time.Friday; weekday++ {
+			seasonality := seasonalityTask{
+				asset: asset,
+				weekday: weekday,
+			}
+			task := dataMiningTask{
+				seasonality: &seasonality,
+			}
+			tasks = append(tasks, task)
+		}
+	}
+	return tasks
+}
+
+func getFeatureMiningTasks(assetRecords []assetRecords, miningConfig DataMiningConfiguration) []dataMiningTask {
 	accessors := getFeatureAccessors()
 	tasks := []dataMiningTask{}
 	conditionRange := miningConfig.Conditions.Range
@@ -205,7 +239,7 @@ func processResults(
 	for _, results := range taskResults {
 		for _, result := range results {
 			if result.enabled {
-				key := result.conditions[0].asset.asset.Symbol
+				key := result.symbol
 				assetResults[key] = append(assetResults[key], result)
 			}
 		}
@@ -250,6 +284,37 @@ func newDataMiningParameter(asset assetRecords, feature featureAccessor, min flo
 }
 
 func executeDataMiningTask(task dataMiningTask, bar *pb.ProgressBar, miningConfig DataMiningConfiguration) []backtestData {
+	var backtests []backtestData
+	if miningConfig.SeasonalityMode {
+		backtests = executeSeasonalityMiningTask(task, miningConfig)
+	} else {
+		backtests = executeFeatureMiningTask(task, miningConfig)
+	}
+	bar.Increment()
+	return backtests
+}
+
+func executeSeasonalityMiningTask(task dataMiningTask, miningConfig DataMiningConfiguration) []backtestData {
+	records := task.seasonality.asset.intradayRecords
+	backtests := initializeMiningBacktests(task, miningConfig)
+	for i := range records {
+		record := &records[i]
+		if !record.hasReturns() {
+			continue
+		}
+		if record.Timestamp.Weekday() != task.seasonality.weekday {
+			continue
+		}
+		for j := range backtests {
+			backtest := &backtests[j]
+			onConditionMatch(record, &task.seasonality.asset.asset, miningConfig.Leverage, false, backtest)
+		}
+	}
+	postProcessBacktests(records, backtests, miningConfig)
+	return backtests
+}
+
+func executeFeatureMiningTask(task dataMiningTask, miningConfig DataMiningConfiguration) []backtestData {
 	condition1 := &task.conditions[0]
 	condition2 := &task.conditions[1]
 	backtests := initializeMiningBacktests(task, miningConfig)
@@ -267,44 +332,43 @@ func executeDataMiningTask(task dataMiningTask, bar *pb.ProgressBar, miningConfi
 		if !stillWorking {
 			break
 		}
-		for i := range backtests {
-			backtestt := &backtests[i]
-			if backtestt.enabled {
-				drawdownExceeded := !miningConfig.isCorrelation() && backtestt.drawdownMax > miningConfig.Drawdown
+		for j := range backtests {
+			backtest := &backtests[j]
+			if backtest.enabled {
+				drawdownExceeded := !miningConfig.isCorrelation() && backtest.drawdownMax > miningConfig.Drawdown
 				var enoughSamples, badPerformance bool
 				if miningConfig.StrategyFilter != nil {
-					enoughSamples = len(backtestt.equityCurve) >= miningConfig.StrategyFilter.Trades
-					badPerformance = backtestt.cumulativeReturn < miningConfig.StrategyFilter.Limit
+					enoughSamples = len(backtest.equityCurve) >= miningConfig.StrategyFilter.Trades
+					badPerformance = backtest.cumulativeReturn < miningConfig.StrategyFilter.Limit
 				} else {
 					enoughSamples = false
 					badPerformance = false
 				}
 				if drawdownExceeded || (enoughSamples && badPerformance) {
-					backtestt.disable()
+					backtest.disable()
 				}
 			}
 		}
 	}
 	postProcessBacktests(condition1.asset.intradayRecords, backtests, miningConfig)
-	bar.Increment()
 	return backtests
 }
 
 func onDataMiningConditionMatch(
 	record1 *FeatureRecord,
 	asset *Asset,
-	results []backtestData,
+	backtests []backtestData,
 	miningConfig DataMiningConfiguration,
 ) bool {
 	stillWorking := false
-	for j := range results {
-		result := &results[j]
-		if !result.enabled {
+	for j := range backtests {
+		backtest := &backtests[j]
+		if !backtest.enabled {
 			continue
 		}
 		stillWorking = true
 		addTimestamp := miningConfig.isCorrelation()
-		onConditionMatch(record1, asset, miningConfig.Leverage, addTimestamp, result)
+		onConditionMatch(record1, asset, miningConfig.Leverage, addTimestamp, backtest)
 	}
 	return stillWorking
 }
@@ -323,14 +387,19 @@ func initializeMiningBacktests(task dataMiningTask, miningConfig DataMiningConfi
 		optimizeWeekdaysModes = append(optimizeWeekdaysModes, true)
 	}
 	returnsAccessors := getReturnsAccessors()
+	symbol := task.seasonality.asset.asset.Symbol
 	for _, returns := range returnsAccessors {
 		for _, side := range sides {
 			for _, optimizeWeekdays := range optimizeWeekdaysModes {
 				for timeOfDay := miningConfig.TimeMin.Duration;
 					timeOfDay <= miningConfig.TimeMax.Duration;
 					timeOfDay += time.Duration(1) * time.Hour {
-					backtest := newBacktest(side, &timeOfDay, task.conditions, returns)
+					backtest := newBacktest(symbol, side, &timeOfDay, task.conditions, returns)
 					backtest.optimizeWeekdays = optimizeWeekdays
+					if task.seasonality != nil {
+						backtest.seasonalityMode = true
+						backtest.weekday = &task.seasonality.weekday
+					}
 					for i := range backtest.optimizationReturns {
 						backtest.optimizationReturns[i].SetBaseCap(weekdayOptimizationBuffer + 2)
 					}
@@ -497,7 +566,7 @@ func getDataMiningModel(
 	assetResults map[string][]backtestData,
 	dailyRecords map[string][]DailyRecord,
 	assetRecords []assetRecords,
-	analysis featureAnalysis,
+	analysis *featureAnalysis,
 	miningConfig DataMiningConfiguration,
 ) DataMiningModel {
 	features := getFeatureModel(analysis)
@@ -507,12 +576,16 @@ func getDataMiningModel(
 		TimeMin: getTimeOfDayString(miningConfig.TimeMin.Duration),
 		TimeMax: getTimeOfDayString(miningConfig.TimeMax.Duration),
 		OptimizeWeekdays: miningConfig.OptimizeWeekdays,
-		Conditions: DataMiningConditions{
-			Range: miningConfig.Conditions.Range,
-			Increment: miningConfig.Conditions.Increment,
-		},
 		Results: []AssetMiningResults{},
 		Features: features,
+		SeasonalityMode: miningConfig.SeasonalityMode,
+	}
+	if !miningConfig.SeasonalityMode {
+		conditions := DataMiningConditions{
+			Range: miningConfig.Conditions.Range,
+			Increment: miningConfig.Conditions.Increment,
+		}
+		model.Conditions = &conditions
 	}
 	symbols := []string{}
 	for symbol := range assetResults {
@@ -564,6 +637,7 @@ func getStrategyMiningResult(
 	output := StrategyMiningResult{
 		Side: int(result.side),
 		OptimizeWeekdays: result.optimizeWeekdays,
+		Weekday: nil,
 		TimeOfDay: nil,
 		Features: []StrategyFeature{},
 		Exit: result.returns.name,
@@ -580,6 +654,10 @@ func getStrategyMiningResult(
 	if result.timeOfDay != nil {
 		timeOfDayString := getTimeOfDayString(*result.timeOfDay)
 		output.TimeOfDay = &timeOfDayString
+	}
+	if result.weekday != nil {
+		weekday := int(*result.weekday)
+		output.Weekday = &weekday
 	}
 	for _, parameter := range result.conditions {
 		feature := StrategyFeature{
