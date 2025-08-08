@@ -387,7 +387,12 @@ func initializeMiningBacktests(task dataMiningTask, miningConfig DataMiningConfi
 		optimizeWeekdaysModes = append(optimizeWeekdaysModes, true)
 	}
 	returnsAccessors := getReturnsAccessors()
-	symbol := task.seasonality.asset.asset.Symbol
+	var symbol string
+	if task.seasonality != nil {
+		symbol = task.seasonality.asset.asset.Symbol
+	} else {
+		symbol = task.conditions[0].asset.asset.Symbol
+	}
 	for _, returns := range returnsAccessors {
 		for _, side := range sides {
 			for _, optimizeWeekdays := range optimizeWeekdaysModes {
