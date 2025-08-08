@@ -477,7 +477,9 @@ func performBacktest(
 	backtestConfig BacktestConfiguration,
 ) backtestData {
 	backtest := newBacktest(strategy.Symbol, strategy.Side.PositionSide, &strategy.Time.Duration, conditions, returns)
-	backtest.weekday = &strategy.Weekday.Weekday
+	if strategy.Weekday != nil {
+		backtest.weekday = &strategy.Weekday.Weekday
+	}
 	for i := range intradayRecords {
 		record := &intradayRecords[i]
 		if record.Timestamp.Before(dateMin) || !record.Timestamp.Before(dateMax) {
