@@ -43,6 +43,8 @@ type DataMiningConfiguration struct {
 	SeasonalityMode bool `yaml:"seasonalityMode"`
 	CorrelationSplits []SerializableDate `yaml:"correlationSplits"`
 	StrategyRatio *float64 `yaml:"strategyRatio"`
+	EnableStopLoss bool `yaml:"enableStopLoss"`
+	StopLoss []StopLossConfiguration `yaml:"stopLoss"`
 }
 
 type StrategyFilter struct {
@@ -53,6 +55,11 @@ type StrategyFilter struct {
 type ConditionConfiguration struct {
 	Range float64 `yaml:"range"`
 	Increment float64 `yaml:"increment"`
+}
+
+type StopLossConfiguration struct {
+	Hours int `yaml:"hours"`
+	Values []float64 `yaml:"values"`
 }
 
 type DataMiningModel struct {
@@ -94,6 +101,7 @@ type StrategyMiningResult struct {
 	Plot string `json:"plot"`
 	WeekdayPlot string `json:"weekdayPlot"`
 	RecentPlot string `json:"recentPlot"`
+	StopLoss *float64 `json:"stopLoss"`
 }
 
 type StrategyFeature struct {
@@ -393,26 +401,47 @@ func initializeMiningBacktests(task dataMiningTask, miningConfig DataMiningConfi
 		symbol = task.conditions[0].asset.asset.Symbol
 	}
 	for _, returns := range returnsAccessors {
-		for _, side := range sides {
-			for _, optimizeWeekdays := range optimizeWeekdaysModes {
-				for timeOfDay := miningConfig.TimeMin.Duration;
-					timeOfDay <= miningConfig.TimeMax.Duration;
-					timeOfDay += time.Duration(1) * time.Hour {
-					backtest := newBacktest(symbol, side, &timeOfDay, task.conditions, returns)
-					backtest.optimizeWeekdays = optimizeWeekdays
-					if task.seasonality != nil {
-						backtest.seasonalityMode = true
-						backtest.weekday = &task.seasonality.weekday
+		stopLossLimits := getStopLossLimits(returns, miningConfig)
+		for _, stopLoss := range stopLossLimits {
+			for _, side := range sides {
+				for _, optimizeWeekdays := range optimizeWeekdaysModes {
+					for timeOfDay := miningConfig.TimeMin.Duration;
+						timeOfDay <= miningConfig.TimeMax.Duration;
+						timeOfDay += time.Duration(1) * time.Hour {
+						backtest := newBacktest(symbol, side, &timeOfDay, task.conditions, returns)
+						backtest.optimizeWeekdays = optimizeWeekdays
+						backtest.enableStopLoss = miningConfig.EnableStopLoss
+						if task.seasonality != nil {
+							backtest.seasonalityMode = true
+							backtest.weekday = &task.seasonality.weekday
+						}
+						if miningConfig.EnableStopLoss {
+							backtest.stopLoss = &stopLoss
+						}
+						for i := range backtest.optimizationReturns {
+							backtest.optimizationReturns[i].SetBaseCap(weekdayOptimizationBuffer + 2)
+						}
+						backtests = append(backtests, backtest)
 					}
-					for i := range backtest.optimizationReturns {
-						backtest.optimizationReturns[i].SetBaseCap(weekdayOptimizationBuffer + 2)
-					}
-					backtests = append(backtests, backtest)
 				}
 			}
 		}
 	}
 	return backtests
+}
+
+func getStopLossLimits(returns returnsAccessor, miningConfig DataMiningConfiguration) []float64 {
+	stopLossLimits := []float64{0.0}
+	if miningConfig.EnableStopLoss {
+		stopLossConfig, exists := find(miningConfig.StopLoss, func (s StopLossConfiguration) bool {
+			return s.Hours == returns.holdingTime
+		})
+		if !exists {
+			log.Fatalf("Unable to find a matching stop-loss limit configuration for a holding time of %dh", returns.holdingTime)
+		}
+		stopLossLimits = stopLossConfig.Values
+	}
+	return stopLossLimits
 }
 
 func optimizeWeekdays(percent float64, weekdayIndex int, backtest *backtestData) {
@@ -654,6 +683,7 @@ func getStrategyMiningResult(
 		Plot: plotURL,
 		WeekdayPlot: weekdayPlotURL,
 		RecentPlot: recentPlotURL,
+		StopLoss: result.stopLoss,
 	}
 	if result.timeOfDay != nil {
 		timeOfDayString := getTimeOfDayString(*result.timeOfDay)

@@ -88,6 +88,8 @@ type backtestData struct {
 	enabled bool
 	seasonalityMode bool
 	weekday *time.Weekday
+	enableStopLoss bool
+	stopLoss *float64
 }
 
 type equityCurveSample struct {
@@ -586,6 +588,13 @@ func onConditionMatch(
 		cash = lastSample.cash
 	}
 	delta := returnsRecord.Close2 - returnsRecord.Close1
+	if backtest.enableStopLoss {
+		drawdown := 1.0 - float64(returnsRecord.Low) / float64(returnsRecord.Close1)
+		if drawdown > *backtest.stopLoss {
+			stopLossLevel := int((1.0 - *backtest.stopLoss) * float64(returnsRecord.Close1))
+			delta = stopLossLevel - returnsRecord.Close1
+		}
+	}
 	returns := getAssetReturns(backtest.side, record.Timestamp, delta, true, asset)
 	notionalValue := float64(returnsRecord.Close1) * asset.TickValue
 	percent := returns / notionalValue

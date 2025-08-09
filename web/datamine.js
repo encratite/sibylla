@@ -39,6 +39,9 @@ function renderDataMiningUI() {
 			if (strategy.optimizeWeekdays === true) {
 				options.push("Weekday optimization");
 			}
+			if (strategy.stopLoss !== null) {
+				options.push(`Stop-loss at ${getPercentage(strategy.stopLoss, 1)}`);
+			}
 			if (options.length === 0) {
 				options.push("-");
 			}
