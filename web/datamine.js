@@ -58,7 +58,7 @@ function renderDataMiningUI() {
 					["Weekday", getWeekdayString(strategy.weekday), false],
 					["Entry", timeOfDay, false],
 					["Holding Time", holdingTime, false],
-					["", "", false],
+					["Options", optionsString, false],
 					["", "", false],
 				];
 			} else {

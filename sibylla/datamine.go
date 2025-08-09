@@ -44,7 +44,7 @@ type DataMiningConfiguration struct {
 	CorrelationSplits []SerializableDate `yaml:"correlationSplits"`
 	StrategyRatio *float64 `yaml:"strategyRatio"`
 	EnableStopLoss bool `yaml:"enableStopLoss"`
-	StopLoss []StopLossConfiguration `yaml:"stopLoss"`
+	StopLoss []float64 `yaml:"stopLoss"`
 }
 
 type StrategyFilter struct {
@@ -55,11 +55,6 @@ type StrategyFilter struct {
 type ConditionConfiguration struct {
 	Range float64 `yaml:"range"`
 	Increment float64 `yaml:"increment"`
-}
-
-type StopLossConfiguration struct {
-	Hours int `yaml:"hours"`
-	Values []float64 `yaml:"values"`
 }
 
 type DataMiningModel struct {
@@ -401,7 +396,7 @@ func initializeMiningBacktests(task dataMiningTask, miningConfig DataMiningConfi
 		symbol = task.conditions[0].asset.asset.Symbol
 	}
 	for _, returns := range returnsAccessors {
-		stopLossLimits := getStopLossLimits(returns, miningConfig)
+		stopLossLimits := getStopLossLimits(miningConfig)
 		for _, stopLoss := range stopLossLimits {
 			for _, side := range sides {
 				for _, optimizeWeekdays := range optimizeWeekdaysModes {
@@ -410,13 +405,13 @@ func initializeMiningBacktests(task dataMiningTask, miningConfig DataMiningConfi
 						timeOfDay += time.Duration(1) * time.Hour {
 						backtest := newBacktest(symbol, side, &timeOfDay, task.conditions, returns)
 						backtest.optimizeWeekdays = optimizeWeekdays
-						backtest.enableStopLoss = miningConfig.EnableStopLoss
 						if task.seasonality != nil {
 							backtest.seasonalityMode = true
 							backtest.weekday = &task.seasonality.weekday
 						}
-						if miningConfig.EnableStopLoss {
-							backtest.stopLoss = &stopLoss
+						if miningConfig.EnableStopLoss && stopLoss != nil {
+							backtest.enableStopLoss = miningConfig.EnableStopLoss
+							backtest.stopLoss = stopLoss
 						}
 						for i := range backtest.optimizationReturns {
 							backtest.optimizationReturns[i].SetBaseCap(weekdayOptimizationBuffer + 2)
@@ -430,16 +425,12 @@ func initializeMiningBacktests(task dataMiningTask, miningConfig DataMiningConfi
 	return backtests
 }
 
-func getStopLossLimits(returns returnsAccessor, miningConfig DataMiningConfiguration) []float64 {
-	stopLossLimits := []float64{0.0}
+func getStopLossLimits(miningConfig DataMiningConfiguration) []*float64 {
+	stopLossLimits := []*float64{nil}
 	if miningConfig.EnableStopLoss {
-		stopLossConfig, exists := find(miningConfig.StopLoss, func (s StopLossConfiguration) bool {
-			return s.Hours == returns.holdingTime
-		})
-		if !exists {
-			log.Fatalf("Unable to find a matching stop-loss limit configuration for a holding time of %dh", returns.holdingTime)
+		for _, limit := range miningConfig.StopLoss {
+			stopLossLimits = append(stopLossLimits, &limit)
 		}
-		stopLossLimits = stopLossConfig.Values
 	}
 	return stopLossLimits
 }
@@ -519,6 +510,11 @@ func postProcessBacktests(intradayRecords []FeatureRecord, backtests []backtestD
 		backtest.postProcess(setRiskAdjusted, preserveReturnsSamples, miningConfig.DateMin.Time, miningConfig.DateMax.Time, intradayRecords)
 		if backtest.tradesRatio < miningConfig.TradesRatio {
 			backtest.disable()
+			continue
+		}
+		if backtest.enableStopLoss && !backtest.stopLossHit {
+			backtest.disable()
+			continue
 		}
 	}
 }
@@ -566,12 +562,24 @@ func loadDataMiningConfiguration(path string) DataMiningConfiguration {
 	if err != nil {
 		log.Fatal("Failed to unmarshal YAML:", err)
 	}
-	configuration.sanityCheck()
+	configuration.validate()
 	configuration.Assets = append(configuration.Assets, configuration.FeaturesOnly...)
 	return *configuration
 }
 
-func (c *DataMiningConfiguration) sanityCheck() {
+func (c *DataMiningConfiguration) validate() {
+	if len(c.Assets) == 0 {
+		log.Fatal("No assets selected for data mining")
+	}
+	if !c.EnableLong && !c.EnableShort {
+		log.Fatal("Either short or long side have to be enabled")
+	}
+	if c.StrategyLimit <= 0 {
+		log.Fatalf("Invalid strategy limit: %d", c.StrategyLimit)
+	}
+	if c.Drawdown <= 0.0 {
+		log.Fatalf("Invalid drawdown: %.2f", c.Drawdown)
+	}
 	if c.StrategyFilter.Limit == 0 || c.StrategyFilter.Limit == 0.0 {
 		log.Fatal("Invalid strategy filter configuration")
 	}
@@ -588,6 +596,19 @@ func (c *DataMiningConfiguration) sanityCheck() {
 	}
 	if c.TimeMin.Duration > c.TimeMax.Duration {
 		log.Fatalf("Data mining without timeMin/timeMax constraints is no longer supported")
+	}
+	if c.TradesMin <= 0 {
+		log.Fatalf("Invalid number of minimum trades: %d", c.TradesMin)
+	}
+	if c.Leverage != nil && *c.Leverage <= 0.0 {
+		log.Fatalf("Invalid leverage: %.1f", *c.Leverage)
+	}
+	if c.EnableStopLoss {
+		for _, limit := range c.StopLoss {
+			if limit <= 0.0 {
+				log.Fatalf("Invalid stop-loss limit: %.2f", limit)
+			}
+		}
 	}
 }
 

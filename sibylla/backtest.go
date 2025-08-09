@@ -90,6 +90,7 @@ type backtestData struct {
 	weekday *time.Weekday
 	enableStopLoss bool
 	stopLoss *float64
+	stopLossHit bool
 }
 
 type equityCurveSample struct {
@@ -593,6 +594,7 @@ func onConditionMatch(
 		if drawdown > *backtest.stopLoss {
 			stopLossLevel := int((1.0 - *backtest.stopLoss) * float64(returnsRecord.Close1))
 			delta = stopLossLevel - returnsRecord.Close1
+			backtest.stopLossHit = true
 		}
 	}
 	returns := getAssetReturns(backtest.side, record.Timestamp, delta, true, asset)
@@ -686,6 +688,9 @@ func newBacktest(
 		cumulativeMax: 1.0,
 		drawdownMax: 0.0,
 		enabled: true,
+		enableStopLoss: false,
+		stopLoss: nil,
+		stopLossHit: false,
 	}
 }
 
