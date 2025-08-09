@@ -41,9 +41,10 @@ type FeatureRecord struct {
 }
 
 type ReturnsRecord struct {
+	High int
+	Low int
 	Close1 int
 	Close2 int
-	Low int
 }
 
 type featureAccessor struct {

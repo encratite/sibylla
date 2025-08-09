@@ -41,6 +41,7 @@ type readDailyRecordsResult struct {
 }
 
 type intradayRecord struct {
+	high float64
 	low float64
 	close float64
 }
@@ -305,6 +306,7 @@ func getReturns(
 			delta,
 		)
 	}
+	var high *float64
 	var low *float64
 	for
 		t := timestamp;
@@ -312,6 +314,9 @@ func getReturns(
 		t = t.Add(time.Duration(1) * time.Hour) {
 		key := getGlobexTimeKey(symbol, t)
 		record, exists := intradayRecords[key]
+		if exists && (high == nil || record.high > *high) {
+			high = &record.high
+		}
 		if exists && (low == nil || record.low < *low) {
 			low = &record.low
 		}
@@ -324,11 +329,13 @@ func getReturns(
 			getTimeString(timestamp),
 		)
 	}
+	highTicks := getTicks(*high)
 	lowTicks := getTicks(*low)
 	returnsRecord := ReturnsRecord{
+		High: highTicks,
+		Low: lowTicks,
 		Close1: closeTicks1,
 		Close2: closeTicks2,
-		Low: lowTicks,
 	}
 	return &returnsRecord
 }
@@ -432,7 +439,7 @@ func readDailyRecords(asset Asset) readDailyRecordsResult {
 
 func readIntradayRecords(asset Asset) intradayRecordsMap {
 	path := getBarchartCsvPath(asset, "H1")
-	columns := []string{"symbol", "time", "low", "close"}
+	columns := []string{"symbol", "time", "high", "low", "close"}
 	recordsMap := intradayRecordsMap{}
 	callback := func(values []string) {
 		symbol, err := parseGlobex(values[0])
@@ -448,10 +455,12 @@ func readIntradayRecords(asset Asset) intradayRecordsMap {
 				return
 			}
 		}
-		low := parseFloat(values[2])
-		close := parseFloat(values[3])
+		high := parseFloat(values[2])
+		low := parseFloat(values[3])
+		close := parseFloat(values[4])
 		key := getGlobexTimeKey(symbol, timestamp)
 		recordsMap[key] = intradayRecord{
+			high: high,
 			low: low,
 			close: close,
 		}

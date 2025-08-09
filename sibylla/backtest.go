@@ -590,12 +590,7 @@ func onConditionMatch(
 	}
 	delta := returnsRecord.Close2 - returnsRecord.Close1
 	if backtest.enableStopLoss {
-		drawdown := 1.0 - float64(returnsRecord.Low) / float64(returnsRecord.Close1)
-		if drawdown > *backtest.stopLoss {
-			stopLossLevel := int((1.0 - *backtest.stopLoss) * float64(returnsRecord.Close1))
-			delta = stopLossLevel - returnsRecord.Close1
-			backtest.stopLossHit = true
-		}
+		processStopLoss(&delta,	returnsRecord, backtest)
 	}
 	returns := getAssetReturns(backtest.side, record.Timestamp, delta, true, asset)
 	notionalValue := float64(returnsRecord.Close1) * asset.TickValue
@@ -627,6 +622,28 @@ func onConditionMatch(
 	backtest.cumulativeMax = max(backtest.cumulativeMax, backtest.cumulativeReturn)
 	drawdown := 1.0 - backtest.cumulativeReturn / backtest.cumulativeMax
 	backtest.drawdownMax = max(backtest.drawdownMax, drawdown)
+}
+
+func processStopLoss(
+	delta *int,
+	returnsRecord *ReturnsRecord,
+	backtest *backtestData,
+) {
+	if backtest.side == SideLong {
+		drawdown := 1.0 - float64(returnsRecord.Low) / float64(returnsRecord.Close1)
+		if drawdown > *backtest.stopLoss {
+			stopLossLevel := int((1.0 - *backtest.stopLoss) * float64(returnsRecord.Close1))
+			*delta = stopLossLevel - returnsRecord.Close1
+			backtest.stopLossHit = true
+		}
+	} else {
+		drawdown := float64(returnsRecord.High) / float64(returnsRecord.Close1) - 1.0
+		if drawdown > *backtest.stopLoss {
+			stopLossLevel := int((1.0 + *backtest.stopLoss) * float64(returnsRecord.Close1))
+			*delta = stopLossLevel - returnsRecord.Close1
+			backtest.stopLossHit = true
+		}
+	}
 }
 
 func (backtest *backtestData) postProcess(
