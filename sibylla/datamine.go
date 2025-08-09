@@ -21,7 +21,6 @@ const riskAdjustedSegments = 3
 const daysPerWeek = 5
 const weekdayOptimizationBuffer = 35
 const recentWeekdayPlotSamples = 100
-const buyAndHoldTimeOfDay = 12
 
 type DataMiningConfiguration struct {
 	Assets []string `yaml:"assets"`
@@ -613,7 +612,7 @@ func getDataMiningModel(
 			Plot: getFileURL(dailyRecordsPlotPath),
 			Strategies: []StrategyMiningResult{},
 		}
-		buyAndHold, _ := getBuyAndHold(symbol, nil, nil, assetRecords)
+		buyAndHold, _ := getBuyAndHold(symbol, &miningConfig.DateMin.Time, &miningConfig.DateMax.Time, assetRecords)
 		for i, result := range results {
 			miningResult := getStrategyMiningResult(symbol, i + 1, result, buyAndHold)
 			assetMiningResults.Strategies = append(assetMiningResults.Strategies, miningResult)

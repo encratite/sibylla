@@ -41,8 +41,9 @@ type FeatureRecord struct {
 }
 
 type ReturnsRecord struct {
-	Ticks1 int
-	Ticks2 int
+	Close1 int
+	Close2 int
+	Low int
 }
 
 type featureAccessor struct {
@@ -258,7 +259,7 @@ func getArchiveProperties() []archiveProperty {
 			get: func (f *FeatureRecord) *float64 {
 				pointer := returns.get(f)
 				if pointer != nil {
-					delta := pointer.Ticks2 - pointer.Ticks1
+					delta := pointer.Close2 - pointer.Close1
 					value := float64(delta)
 					return &value
 				} else {

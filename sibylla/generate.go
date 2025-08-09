@@ -40,10 +40,15 @@ type readDailyRecordsResult struct {
 	excludedRecords int
 }
 
+type intradayRecord struct {
+	low float64
+	close float64
+}
+
 type openInterestMap map[time.Time][]dailyRecord
 type dailyRecordMap map[time.Time]dailyRecord
 type dailyCloseMap map[globexDateKey]float64
-type intradayCloseMap map[globexTimeKey]float64
+type intradayRecordsMap map[globexTimeKey]intradayRecord
 
 func Generate(symbol *string) {
 	loadConfiguration()
@@ -114,7 +119,7 @@ func generateFRecords(
 	fNumber int,
 	openIntRecords []openInterestRecords,
 	dailyCloses dailyCloseMap,
-	intradayCloses intradayCloseMap,
+	intradayCloses intradayRecordsMap,
 	intradayTimestamps []time.Time,
 	asset Asset,
 ) {
@@ -160,7 +165,7 @@ func processIntradayTimestamp(
 	timestamp time.Time,
 	dailyRecords dailyRecordMap,
 	dailyCloses dailyCloseMap,
-	intradayCloses intradayCloseMap,
+	intradayRecords intradayRecordsMap,
 	asset *Asset,
 	archive *Archive,
 ) {
@@ -171,7 +176,7 @@ func processIntradayTimestamp(
 	}
 	symbol := record.symbol
 	key := getGlobexTimeKey(symbol, timestamp)
-	close, exists := intradayCloses[key]
+	intradayRecord, exists := intradayRecords[key]
 	if !exists {
 		return
 	}
@@ -181,10 +186,10 @@ func processIntradayTimestamp(
 			lagDays,
 			offsetHours,
 			timestamp,
-			close,
+			intradayRecord,
 			symbol,
 			dailyCloses,
-			intradayCloses,
+			intradayRecords,
 		)
 	}
 	returnsHelper := func (offsetDays, offsetHours int) *ReturnsRecord {
@@ -192,9 +197,9 @@ func processIntradayTimestamp(
 			offsetDays,
 			offsetHours,
 			timestamp,
-			close,
+			intradayRecord,
 			symbol,
-			intradayCloses,
+			intradayRecords,
 			asset,
 		)
 	}
@@ -227,11 +232,12 @@ func getMomentum(
 	lagDays int,
 	offsetHours int,
 	timestamp time.Time,
-	close float64,
+	record intradayRecord,
 	symbol GlobexCode,
 	dailyCloses dailyCloseMap,
-	intradayCloses intradayCloseMap,
+	intradayRecords intradayRecordsMap,
 ) *float64 {
+	close := record.close
 	offsetTimestamp := getAdjustedTimestamp(-offsetDays, -offsetHours, timestamp)
 	var offsetClose float64
 	if offsetHours == 0 {
@@ -243,11 +249,11 @@ func getMomentum(
 		offsetClose = dailyClose
 	} else {
 		key := getGlobexTimeKey(symbol, offsetTimestamp)
-		intradayClose, exists := intradayCloses[key]
+		offsetRecord, exists := intradayRecords[key]
 		if !exists {
 			return nil
 		}
-		offsetClose = intradayClose
+		offsetClose = offsetRecord.close
 	}
 	if lagDays > 0 {
 		lagTimestamp := getAdjustedTimestamp(-lagDays, 0, timestamp)
@@ -269,38 +275,62 @@ func getReturns(
 	offsetDays int,
 	offsetHours int,
 	timestamp time.Time,
-	close float64,
+	record intradayRecord,
 	symbol GlobexCode,
-	intradayCloses intradayCloseMap,
+	intradayRecords intradayRecordsMap,
 	asset *Asset,
 ) *ReturnsRecord {
 	adjustedTimestamp := getAdjustedTimestamp(offsetDays, offsetHours, timestamp)
 	key := getGlobexTimeKey(symbol, adjustedTimestamp)
-	horizonClose, exists := intradayCloses[key]
-	if exists {
-		ticks1 := int(close / asset.TickSize)
-		ticks2 := int(horizonClose / asset.TickSize)
-		delta := ticks2 - ticks1
-		if delta < - returnsLimit || delta > returnsLimit {
-			format := "[%s] Excessive returns sample: adjustedTimestamp = %s, timestamp = %s, horizonClose = %s, close = %s, delta = %d\n"
-			log.Fatalf(
-				format,
-				asset.Symbol,
-				getTimeString(adjustedTimestamp),
-				getTimeString(timestamp),
-				horizonClose,
-				close,
-				delta,
-			)
-		}
-		record := ReturnsRecord{
-			Ticks1: ticks1,
-			Ticks2: ticks2,
-		}
-		return &record
-	} else {
+	horizonRecord, exists := intradayRecords[key]
+	getTicks := func (value float64) int {
+		return int(value / asset.TickSize)
+	}
+	if !exists {
 		return nil
 	}
+	close := record.close
+	closeTicks1 := getTicks(close)
+	closeTicks2 := getTicks(horizonRecord.close)
+	delta := closeTicks2 - closeTicks1
+	if delta < - returnsLimit || delta > returnsLimit {
+		format := "[%s] Excessive returns sample: adjustedTimestamp = %s, timestamp = %s, horizonClose = %s, close = %s, delta = %d\n"
+		log.Fatalf(
+			format,
+			asset.Symbol,
+			getTimeString(adjustedTimestamp),
+			getTimeString(timestamp),
+			horizonRecord.close,
+			close,
+			delta,
+		)
+	}
+	var low *float64
+	for
+		t := timestamp;
+		!t.After(adjustedTimestamp);
+		t = t.Add(time.Duration(1) * time.Hour) {
+		key := getGlobexTimeKey(symbol, t)
+		record, exists := intradayRecords[key]
+		if exists && (low == nil || record.low < *low) {
+			low = &record.low
+		}
+	}
+	if low == nil {
+		format := "[%s] Unable to determine low: adjustedTimestamp = %s, timestamp = %s"
+		log.Fatalf(
+			format,
+			getTimeString(adjustedTimestamp),
+			getTimeString(timestamp),
+		)
+	}
+	lowTicks := getTicks(*low)
+	returnsRecord := ReturnsRecord{
+		Close1: closeTicks1,
+		Close2: closeTicks2,
+		Low: lowTicks,
+	}
+	return &returnsRecord
 }
 
 func getAdjustedTimestamp(offsetDays int, offsetHours int, timestamp time.Time) time.Time {
@@ -400,10 +430,10 @@ func readDailyRecords(asset Asset) readDailyRecordsResult {
 	return result
 }
 
-func readIntradayRecords(asset Asset) intradayCloseMap {
+func readIntradayRecords(asset Asset) intradayRecordsMap {
 	path := getBarchartCsvPath(asset, "H1")
-	columns := []string{"symbol", "time", "close"}
-	recordsMap := intradayCloseMap{}
+	columns := []string{"symbol", "time", "low", "close"}
+	recordsMap := intradayRecordsMap{}
 	callback := func(values []string) {
 		symbol, err := parseGlobex(values[0])
 		if err != nil {
@@ -418,9 +448,13 @@ func readIntradayRecords(asset Asset) intradayCloseMap {
 				return
 			}
 		}
-		close := parseFloat(values[2])
+		low := parseFloat(values[2])
+		close := parseFloat(values[3])
 		key := getGlobexTimeKey(symbol, timestamp)
-		recordsMap[key] = close
+		recordsMap[key] = intradayRecord{
+			low: low,
+			close: close,
+		}
 	}
 	readCsv(path, columns, callback)
 	return recordsMap

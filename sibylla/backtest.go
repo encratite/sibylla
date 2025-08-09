@@ -13,6 +13,7 @@ import (
 )
 
 const buyAndHoldSymbol = "ES"
+const buyAndHoldTimeOfDay = 12
 
 type BacktestConfiguration struct {
 	DateMin SerializableDate `yaml:"dateMin"`
@@ -444,7 +445,8 @@ func executeAssetLoader(
 			}
 		}
 		isValid = isValidTime(record.Timestamp, timeMin, timeMax)
-		if !isValid {
+		isBuyAndHold := record.Timestamp.Hour() == buyAndHoldTimeOfDay
+		if !isValid && !isBuyAndHold {
 			continue
 		}
 		intradayRecords = append(intradayRecords, record)
@@ -583,9 +585,9 @@ func onConditionMatch(
 		}
 		cash = lastSample.cash
 	}
-	delta := returnsRecord.Ticks2 - returnsRecord.Ticks1
+	delta := returnsRecord.Close2 - returnsRecord.Close1
 	returns := getAssetReturns(backtest.side, record.Timestamp, delta, true, asset)
-	notionalValue := float64(returnsRecord.Ticks1) * asset.TickValue
+	notionalValue := float64(returnsRecord.Close1) * asset.TickValue
 	percent := returns / notionalValue
 	factor := 1.0 + percent
 	weekdayIndex := int(record.Timestamp.Weekday()) - 1
@@ -702,7 +704,7 @@ func getBuyAndHold(symbol string, dateMin *time.Time, dateMax *time.Time, assets
 		if records.asset.ShortBias {
 			side = SideShort
 		}
-		delta := record.Returns24H.Ticks2 - record.Returns24H.Ticks1
+		delta := record.Returns24H.Close2 - record.Returns24H.Close1
 		returns := getAssetReturns(side, record.Timestamp, delta, false, &records.asset)
 		cash += returns
 		sample := equityCurveSample{
@@ -710,10 +712,13 @@ func getBuyAndHold(symbol string, dateMin *time.Time, dateMax *time.Time, assets
 			cash: cash,
 		}
 		equityCurve = append(equityCurve, sample)
-		notionalValue := float64(record.Returns24H.Ticks1) * records.asset.TickValue
+		notionalValue := float64(record.Returns24H.Close1) * records.asset.TickValue
 		percent := returns / notionalValue
 		returnsSamples = append(returnsSamples, percent)
 
+	}
+	if len(equityCurve) == 0 {
+		log.Fatalf("Failed to retrieve buy and hold equity curve for symbol \"%s\"", symbol)
 	}
 	return equityCurve, returnsSamples
 }
