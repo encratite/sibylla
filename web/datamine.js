@@ -7,6 +7,10 @@ function renderDataMiningUI() {
 		const featuresContainer = createElement("div", container);
 		renderFeatures(model, featuresContainer);
 	}
+	if (model.enableStopLoss === true) {
+		const stopLossContainer = createElement("div", container);
+		renderStopLoss(model, stopLossContainer);
+	}
 	model.results.forEach(asset => {
 		const header = createElement("h1", container);
 		header.textContent = `${asset.symbol} (${asset.strategies.length} Strategies)`;
@@ -167,6 +171,85 @@ function renderFeatures(model, container) {
 			cell2.textContent = getPercentage(frequency, 1);
 		});
 	}
+}
+
+function renderStopLoss(model, container) {
+	const header = createElement("h1", container);
+	header.textContent = "Stop-Loss";
+	const stopLossContainer = createElement("div", container, "stopLoss");
+	model.results.forEach((results, i) => {
+		renderAssetStopLoss(results, i, stopLossContainer);
+	});
+}
+
+function renderAssetStopLoss(results, index, container) {
+	const stopLoss = results.stopLoss;
+	const xValues = stopLoss.holdingTimes.map(x => `${x}h`);
+	const yValues = ["None"].concat(stopLoss.limits.map(x => getPercentage(x, 1)));
+	const zValues = stopLoss.riskAdjusted;
+	const textData = [];
+	for (let x = 0; x < stopLoss.riskAdjusted.length; x++) {
+		const row = [];
+		for (let y = 0; y < stopLoss.riskAdjusted[x].length; y++) {
+			const value = stopLoss.riskAdjusted[x][y];
+			const formattedValue = value !== 0.0 ? value.toFixed(3) : "-";
+			row.push(formattedValue)
+		}
+		textData.push(row);
+	}
+	const data = [{
+		x: xValues,
+		y: yValues,
+		z: zValues,
+		type: "heatmap",
+		colorscale: "Viridis",
+		text: textData,
+		texttemplate: "%{text}",
+		hoverinfo: "skip",
+		showscale: true,
+	}];
+	const layout = {
+		title: {
+			text: `Risk-Adjusted Returns for ${results.symbol}`,
+			font: {
+				size: 18
+			},
+		},
+		font: {
+			family: "Roboto",
+			size: 14,
+		},
+		width: 700,
+		margin: {
+			t: 40,
+			b: 100,
+			l: 120,
+			r: 50
+		},
+		xaxis: {
+			title: {
+				text: "Holding Time",
+				standoff: 15,
+			},
+			type: "category"
+		},
+		yaxis: {
+			title: {
+				text: "Stop-Loss",
+				standoff: 10,
+			},
+			type: "category"
+		}
+	};
+	const config = {
+		displayModeBar: false
+	};
+	const id = `stopLossHeatmap${index}`;
+	createElement("div", container, {
+		id: id,
+		className: "stopLossHeatmap",
+	});
+	Plotly.newPlot(id, data, layout, config);
 }
 
 function renderFeatureHeatmap(features, container) {

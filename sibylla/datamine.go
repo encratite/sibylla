@@ -21,6 +21,7 @@ const riskAdjustedSegments = 3
 const daysPerWeek = 5
 const weekdayOptimizationBuffer = 35
 const recentWeekdayPlotSamples = 100
+const stopLossAnalysisLimit = 1000
 
 type DataMiningConfiguration struct {
 	Assets []string `yaml:"assets"`
@@ -68,6 +69,7 @@ type DataMiningModel struct {
 	Features *FeatureAnalysis `json:"features"`
 	SingleFeature bool `json:"singleFeature"`
 	SeasonalityMode bool `json:"seasonalityMode"`
+	EnableStopLoss bool `json:"enableStopLoss"`
 }
 
 type DataMiningConditions struct {
@@ -79,6 +81,7 @@ type AssetMiningResults struct {
 	Symbol string `json:"symbol"`
 	Plot string `json:"plot"`
 	Strategies []StrategyMiningResult `json:"strategies"`
+	StopLoss *StopLossAnalysis `json:"stopLoss"`
 }
 
 type StrategyMiningResult struct {
@@ -115,6 +118,12 @@ type FeatureFrequency struct {
 type FeatureAnalysis struct {
 	Features []FeatureFrequency `json:"features"`
 	Combinations [][]float64 `json:"combinations"`
+}
+
+type StopLossAnalysis struct {
+	HoldingTimes []int `json:"holdingTimes"`
+	Limits []float64 `json:"limits"`
+	RiskAdjusted [][]float64 `json:"riskAdjusted"`
 }
 
 type dataMiningTask struct {
@@ -238,32 +247,39 @@ func processResults(
 	miningConfig DataMiningConfiguration,
 ) DataMiningModel {
 	start := time.Now()
-	assetResults := map[string][]backtestData{}
+	assetBacktests := map[string][]backtestData{}
 	for _, results := range taskResults {
 		for _, result := range results {
 			if result.enabled {
 				key := result.symbol
-				assetResults[key] = append(assetResults[key], result)
+				assetBacktests[key] = append(assetBacktests[key], result)
 			}
 		}
 	}
-	if len(assetResults) == 0 {
+	if len(assetBacktests) == 0 {
 		log.Fatal("No results")
 	}
-	analyzeWeekdayOptimizations(assetResults)
-	analysis := analyzeFeatureFrequency(assetResults, miningConfig)
-	for symbol := range assetResults {
-		slices.SortFunc(assetResults[symbol], func (a, b backtestData) int {
+	analyzeWeekdayOptimizations(assetBacktests)
+	analysis := analyzeFeatureFrequency(assetBacktests, miningConfig)
+	assetStopLoss := map[string]StopLossAnalysis{}
+	for symbol := range assetBacktests {
+		slices.SortFunc(assetBacktests[symbol], func (a, b backtestData) int {
 			return compareFloat64(b.riskAdjustedMin, a.riskAdjustedMin)
 		})
-		results := assetResults[symbol]
-		if len(results) > miningConfig.StrategyLimit {
-			results = results[:miningConfig.StrategyLimit]
+		backtests := assetBacktests[symbol]
+		if miningConfig.EnableStopLoss {
+			limit := min(len(backtests), stopLossAnalysisLimit)
+			truncuatedBacktests := backtests[:limit]
+			analysis := getStopLossAnalysis(truncuatedBacktests, miningConfig)
+			assetStopLoss[symbol] = analysis
 		}
-		slices.SortFunc(results, func (a, b backtestData) int {
+		if len(backtests) > miningConfig.StrategyLimit {
+			backtests = backtests[:miningConfig.StrategyLimit]
+		}
+		slices.SortFunc(backtests, func (a, b backtestData) int {
 			return compareFloat64(b.riskAdjustedRecent, a.riskAdjustedRecent)
 		})
-		assetResults[symbol] = results
+		assetBacktests[symbol] = backtests
 	}
 	dailyRecords := map[string][]DailyRecord{}
 	for _, records := range assetRecords {
@@ -271,7 +287,7 @@ func processResults(
 		dailyRecords[key] = records.dailyRecords
 	}
 	clearDirectory(configuration.TempPath)
-	model := getDataMiningModel(assetResults, dailyRecords, assetRecords, analysis, miningConfig)
+	model := getDataMiningModel(assetBacktests, assetStopLoss, dailyRecords, assetRecords, analysis, miningConfig)
 	delta := time.Since(start)
 	fmt.Printf("Finished post-processing results in %.2f s\n", delta.Seconds())
 	return model
@@ -618,7 +634,8 @@ func (c *DataMiningConfiguration) isCorrelation() bool {
 }
 
 func getDataMiningModel(
-	assetResults map[string][]backtestData,
+	assetBacktests map[string][]backtestData,
+	assetStopLoss map[string]StopLossAnalysis,
 	dailyRecords map[string][]DailyRecord,
 	assetRecords []assetRecords,
 	analysis *featureAnalysis,
@@ -635,6 +652,7 @@ func getDataMiningModel(
 		Features: features,
 		SingleFeature: miningConfig.SingleFeature,
 		SeasonalityMode: miningConfig.SeasonalityMode,
+		EnableStopLoss: miningConfig.EnableStopLoss,
 	}
 	if !miningConfig.SeasonalityMode {
 		conditions := DataMiningConditions{
@@ -644,17 +662,17 @@ func getDataMiningModel(
 		model.Conditions = &conditions
 	}
 	symbols := []string{}
-	for symbol := range assetResults {
+	for symbol := range assetBacktests {
 		symbols = append(symbols, symbol)
 	}
 	model.Results = parallelMap(symbols, func (symbol string) AssetMiningResults {
-		results, exists := assetResults[symbol]
+		backtests, exists := assetBacktests[symbol]
 		if !exists {
-			log.Fatalf("Unable to find matching results for symbol %s", symbol)
+			log.Fatalf("Unable to find matching results for symbol \"%s\"", symbol)
 		}
 		plotRecords, exists := dailyRecords[symbol]
 		if !exists {
-			log.Fatalf("Unable to find matching daily records for symbol %s", symbol)
+			log.Fatalf("Unable to find matching daily records for symbol \"%s\"", symbol)
 		}
 		fileName := fmt.Sprintf("%s.daily.png", symbol)
 		dailyRecordsPlotPath := filepath.Join(configuration.TempPath, fileName)
@@ -664,8 +682,15 @@ func getDataMiningModel(
 			Plot: getFileURL(dailyRecordsPlotPath),
 			Strategies: []StrategyMiningResult{},
 		}
+		if miningConfig.EnableStopLoss {
+			stopLoss, exists := assetStopLoss[symbol]
+			if !exists {
+				log.Fatalf("Unable to find stop-loss analysis for symbol \"%s\"", symbol)
+			}
+			assetMiningResults.StopLoss = &stopLoss
+		}
 		buyAndHold, _ := getBuyAndHold(symbol, &miningConfig.DateMin.Time, &miningConfig.DateMax.Time, assetRecords)
-		for i, result := range results {
+		for i, result := range backtests {
 			miningResult := getStrategyMiningResult(symbol, i + 1, result, buyAndHold)
 			assetMiningResults.Strategies = append(assetMiningResults.Strategies, miningResult)
 		}
@@ -677,6 +702,60 @@ func getDataMiningModel(
 		return index1 - index2
 	})
 	return model
+}
+
+func getStopLossAnalysis(backtests []backtestData, miningConfig DataMiningConfiguration) StopLossAnalysis {
+	returns := getReturnsAccessors()
+	holdingTimes := []int{}
+	holdingTimesIndices := map[int]int{}
+	riskAdjustedSamples := [][][]float64{}
+	stopLossCount := len(miningConfig.StopLoss) + 1
+	for i, r := range returns {
+		holdingTimesIndices[r.holdingTime] = i
+		holdingTimes = append(holdingTimes, r.holdingTime)
+		samples := make([][]float64, stopLossCount)
+		riskAdjustedSamples = append(riskAdjustedSamples, samples)
+	}
+	stopLossIndices := map[float64]int{}
+	for i, limit := range miningConfig.StopLoss {
+		stopLossIndices[limit] = i + 1
+	}
+	for _, backtest := range backtests {
+		holdingTimeIndex, holdingTimeExists := holdingTimesIndices[backtest.returns.holdingTime]
+		if !holdingTimeExists {
+			log.Fatalf("Unable to determine holding time index for holding time %dh", backtest.returns.holdingTime)
+		}
+		stopLossIndex := 0
+		if backtest.enableStopLoss {
+			mapIndex, mapExists := stopLossIndices[*backtest.stopLoss]
+			if !mapExists {
+				log.Fatalf("Unable to determine stop-loss index for value %.2f", *backtest.stopLoss)
+			}
+			stopLossIndex = mapIndex
+		}
+		i := holdingTimeIndex
+		j := stopLossIndex
+		riskAdjustedSamples[i][j] = append(riskAdjustedSamples[i][j], backtest.riskAdjusted)
+	}
+	riskAdjusted := [][]float64{}
+	for i := range stopLossCount {
+		row := []float64{}
+		for j := range returns {
+			samples := riskAdjustedSamples[j][i]
+			mean := 0.0
+			if len(samples) > 0 {
+				mean = stat.Mean(samples, nil)
+			}
+			row = append(row, mean)
+		}
+		riskAdjusted = append(riskAdjusted, row)
+	}
+	analysis := StopLossAnalysis{
+		HoldingTimes: holdingTimes,
+		Limits: miningConfig.StopLoss,
+		RiskAdjusted: riskAdjusted,
+	}
+	return analysis
 }
 
 func getStrategyMiningResult(

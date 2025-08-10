@@ -157,3 +157,15 @@
 		background-color: #e0e0e0;
 	}
 }
+
+
+.stopLoss {
+	display: flex;
+	flex-wrap: wrap;
+}
+
+.stopLossHeatmap {
+	flex: 0 0 50%;
+	box-sizing: border-box;
+	height: 700px;
+}
