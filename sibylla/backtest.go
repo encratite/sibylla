@@ -14,6 +14,7 @@ import (
 
 const buyAndHoldSymbol = "ES"
 const buyAndHoldTimeOfDay = 12
+const stopLossSlippage = 2
 
 type BacktestConfiguration struct {
 	DateMin SerializableDate `yaml:"dateMin"`
@@ -632,14 +633,14 @@ func processStopLoss(
 	if backtest.side == SideLong {
 		drawdown := 1.0 - float64(returnsRecord.Low) / float64(returnsRecord.Close1)
 		if drawdown > *backtest.stopLoss {
-			stopLossLevel := int((1.0 - *backtest.stopLoss) * float64(returnsRecord.Close1))
+			stopLossLevel := int((1.0 - *backtest.stopLoss) * float64(returnsRecord.Close1)) - stopLossSlippage
 			*delta = stopLossLevel - returnsRecord.Close1
 			backtest.stopLossHit = true
 		}
 	} else {
 		drawdown := float64(returnsRecord.High) / float64(returnsRecord.Close1) - 1.0
 		if drawdown > *backtest.stopLoss {
-			stopLossLevel := int((1.0 + *backtest.stopLoss) * float64(returnsRecord.Close1))
+			stopLossLevel := int((1.0 + *backtest.stopLoss) * float64(returnsRecord.Close1)) + stopLossSlippage
 			*delta = stopLossLevel - returnsRecord.Close1
 			backtest.stopLossHit = true
 		}

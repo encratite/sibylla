@@ -5,7 +5,7 @@ function renderDataMiningUI() {
 	});
 	if (model.features !== null) {
 		const featuresContainer = createElement("div", container);
-		renderFeatures(model.features, featuresContainer);
+		renderFeatures(model, featuresContainer);
 	}
 	model.results.forEach(asset => {
 		const header = createElement("h1", container);
@@ -63,7 +63,7 @@ function renderDataMiningUI() {
 				];
 			} else {
 				const feature1 = features[0];
-				const feature2 = features[0] !== features[1] ? features[1] : "-";
+				const feature2 = model.singleFeature === false ? features[1] : "-";
 				cells1 = [
 					["Feature 1", feature1, false],
 					["Feature 2", feature2, false],
@@ -132,12 +132,18 @@ function getWeekdayString(weekday) {
 	return weekdays[index];
 }
 
-function renderFeatures(features, container) {
+function renderFeatures(model, container) {
+	const features = model.features;
 	const header = createElement("h1", container);
 	header.textContent = "Features";
 	const innerContainer = createElement("div", container, "features");
-	renderFeatureHeatmap(features, innerContainer);
-	const featureSlots = features.features[0].frequencies.length;
+	if (model.singleFeature === false) {
+		renderFeatureHeatmap(features, innerContainer);
+	}
+	let featureSlots = 1;
+	if (model.singleFeature === false) {
+		featureSlots = features.features[0].frequencies.length;
+	}
 	for (let featureIndex = 0; featureIndex < featureSlots; featureIndex++) {
 		const table = createElement("table", innerContainer);
 		const headerRow = createElement("tr", table);

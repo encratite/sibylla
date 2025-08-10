@@ -66,6 +66,7 @@ type DataMiningModel struct {
 	Conditions *DataMiningConditions `json:"conditions"`
 	Results []AssetMiningResults `json:"results"`
 	Features *FeatureAnalysis `json:"features"`
+	SingleFeature bool `json:"singleFeature"`
 	SeasonalityMode bool `json:"seasonalityMode"`
 }
 
@@ -632,6 +633,7 @@ func getDataMiningModel(
 		OptimizeWeekdays: miningConfig.OptimizeWeekdays,
 		Results: []AssetMiningResults{},
 		Features: features,
+		SingleFeature: miningConfig.SingleFeature,
 		SeasonalityMode: miningConfig.SeasonalityMode,
 	}
 	if !miningConfig.SeasonalityMode {
