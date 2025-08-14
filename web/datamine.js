@@ -56,6 +56,7 @@ function renderDataMiningUI() {
 			const holdingTimeHours = parseInt(holdingTimeMatch[0]);
 			const holdingTime = `${holdingTimeHours}h`;
 			let cells1;
+			const daysTraded = ["Days Traded", getPercentage(strategy.tradesRatio, 1), false];
 			if (model.seasonalityMode === true) {
 				cells1 = [
 					["Side", side, false],
@@ -63,8 +64,7 @@ function renderDataMiningUI() {
 					["Entry", timeOfDay, false],
 					["Holding Time", holdingTime, false],
 					["Options", optionsString, false],
-					["", "", false],
-					["", "", false],
+					daysTraded,
 				];
 			} else {
 				const feature1 = features[0];
@@ -76,7 +76,7 @@ function renderDataMiningUI() {
 					["Entry", timeOfDay, false],
 					["Holding Time", holdingTime, false],
 					["Options", optionsString, false],
-					["", "", false],
+					daysTraded,
 				];
 			}
 			const cells2 = [
@@ -86,8 +86,10 @@ function renderDataMiningUI() {
 				getSharpeRatio("RecSR", strategy.recentSharpe),
 				getSharpeRatio("Buy and Hold SR", strategy.buyAndHoldSharpe),
 				["Max Drawdown", getPercentage(strategy.maxDrawdown, 1), true],
-				["Days Traded", getPercentage(strategy.tradesRatio, 1), true],
 			];
+			while (cells2.length < cells1.length) {
+				cells2.push(["", "", false]);
+			}
 			const renderCell = (definition, row) => {
 				const description = definition[0];
 				const content = definition[1];

@@ -20,6 +20,8 @@ type monthlyEquityKey struct {
 
 type equityCurveData struct {
 	initialCash float64
+	maxCash float64
+	maxDrawdown float64
 	samples []equityCurveSample
 	endOfMonthCash map[monthlyEquityKey]float64
 }
@@ -34,6 +36,8 @@ func newMonthlyEquityKey(timestamp time.Time) monthlyEquityKey {
 func newEquityCurve(initialCash float64) equityCurveData {
 	return equityCurveData{
 		initialCash: initialCash,
+		maxCash: initialCash,
+		maxDrawdown: 0.0,
 		samples: nil,
 		endOfMonthCash: map[monthlyEquityKey]float64{},
 	}
@@ -55,6 +59,9 @@ func (d *equityCurveData) add(timestamp time.Time, cash float64) {
 	d.samples = append(d.samples, sample)
 	key := newMonthlyEquityKey(timestamp)
 	d.endOfMonthCash[key] = cash
+	d.maxCash = max(d.maxCash, cash)
+	drawdown := 1.0 - cash / d.maxCash
+	d.maxDrawdown = max(d.maxDrawdown, drawdown)
 }
 
 func (d *equityCurveData) empty() bool {
@@ -106,6 +113,17 @@ func (d *equityCurveData) getReturns(
 		if !success {
 			log.Fatal("Failed to calculate returns")
 		}
+		return returns
+	} else {
+		return 1.0
+	}
+}
+
+func (d *equityCurveData) getFilterReturns() float64 {
+	if !d.empty() {
+		first := d.samples[0]
+		last := d.samples[len(d.samples) - 1]
+		returns := last.cash / first.cash
 		return returns
 	} else {
 		return 1.0

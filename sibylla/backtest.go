@@ -84,9 +84,6 @@ type backtestData struct {
 	recentSharpe float64
 	buyAndHoldSharpe float64
 	tradesRatio float64
-	cumulativeReturn float64
-	cumulativeMax float64
-	drawdownMax float64
 	enabled bool
 	seasonalityMode bool
 	weekday *time.Weekday
@@ -596,7 +593,6 @@ func onConditionMatch(
 	returns := getAssetReturns(backtest.side, record.Timestamp, delta, true, asset)
 	notionalValue := float64(returnsRecord.Close1) * asset.TickValue
 	percent := returns / notionalValue
-	factor := 1.0 + percent
 	weekdayIndex := int(record.Timestamp.Weekday()) - 1
 	bannedDay := backtest.bannedDay
 	if backtest.optimizeWeekdays {
@@ -611,10 +607,6 @@ func onConditionMatch(
 	cash += returns
 	equityCurve.add(record.Timestamp, cash)
 	backtest.weekdayReturns[weekdayIndex] = append(backtest.weekdayReturns[weekdayIndex], percent)
-	backtest.cumulativeReturn *= factor
-	backtest.cumulativeMax = max(backtest.cumulativeMax, backtest.cumulativeReturn)
-	drawdown := 1.0 - backtest.cumulativeReturn / backtest.cumulativeMax
-	backtest.drawdownMax = max(backtest.drawdownMax, drawdown)
 }
 
 func processStopLoss(
@@ -687,9 +679,6 @@ func newBacktest(
 		weekdayReturns: [daysPerWeek][]float64{},
 		optimizationReturns: [daysPerWeek]deque.Deque[float64]{},
 		bannedDay: nil,
-		cumulativeReturn: 1.0,
-		cumulativeMax: 1.0,
-		drawdownMax: 0.0,
 		enabled: true,
 		enableStopLoss: false,
 		stopLoss: nil,

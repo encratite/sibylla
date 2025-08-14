@@ -383,11 +383,12 @@ func drawdownAndTradesCheck(backtests []backtestData, miningConfig DataMiningCon
 	for i := range backtests {
 		backtest := &backtests[i]
 		if backtest.enabled {
-			drawdownExceeded := !miningConfig.isCorrelation() && backtest.drawdownMax > miningConfig.Drawdown
+			drawdownExceeded := !miningConfig.isCorrelation() && backtest.equityCurve.maxDrawdown > miningConfig.Drawdown
 			var enoughSamples, badPerformance bool
+			filterReturns := backtest.equityCurve.getFilterReturns()
 			if miningConfig.StrategyFilter != nil {
 				enoughSamples = len(backtest.equityCurve.samples) >= miningConfig.StrategyFilter.Trades
-				badPerformance = backtest.cumulativeReturn < miningConfig.StrategyFilter.Limit
+				badPerformance = filterReturns < miningConfig.StrategyFilter.Limit
 			} else {
 				enoughSamples = false
 				badPerformance = false
@@ -809,7 +810,7 @@ func getStrategyMiningResult(
 		MinSharpe: result.minSharpe,
 		RecentSharpe: result.recentSharpe,
 		BuyAndHoldSharpe: result.buyAndHoldSharpe,
-		MaxDrawdown: result.drawdownMax,
+		MaxDrawdown: result.equityCurve.maxDrawdown,
 		TradesRatio: result.tradesRatio,
 		Plot: plotURL,
 		WeekdayPlot: weekdayPlotURL,
