@@ -138,15 +138,15 @@ func (d *equityCurveData) getMaxDrawdown(
 	return maxDrawdown
 }
 
-func (d *equityCurveData) getRiskAdjusted(
+func (d *equityCurveData) getSharpe(
 	dateMin time.Time,
 	dateMax time.Time,
 ) float64 {
 	performance := d.getPerformance(dateMin, dateMax)
 	riskFreeRate := 0.0
-	riskAdjusted := (stat.Mean(performance, nil) - riskFreeRate) / stat.StdDev(performance, nil)
-	annualized := math.Sqrt(monthsPerYear) * riskAdjusted
-	return annualized
+	sharpeRatio := (stat.Mean(performance, nil) - riskFreeRate) / stat.StdDev(performance, nil)
+	annualizedSharpe := math.Sqrt(monthsPerYear) * sharpeRatio
+	return annualizedSharpe
 }
 
 func (d *equityCurveData) reset() {

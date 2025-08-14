@@ -20,7 +20,7 @@ type segmentedReturnsStats struct {
 	index int
 	returns float64
 	maxDrawdown float64
-	riskAdjusted float64
+	sharpe float64
 }
 
 type collectedSegmentStats struct {
@@ -75,9 +75,9 @@ func OOSCorrelation(yamlPath string) {
 		},
 		ascending: true,
 	}
-	getRiskAdjusted := correlationProperty{
+	getSharpeRatio := correlationProperty{
 		get: func (s segmentedReturnsStats) float64 {
-			return s.riskAdjusted
+			return s.sharpe
 		},
 		ascending: false,
 	}
@@ -88,10 +88,10 @@ func OOSCorrelation(yamlPath string) {
 	features := []correlationFeature{
 		getCorrelationFeature("Returns (IS)", isStats, isStats, oosStats, getReturns, miningConfig),
 		getCorrelationFeature("Max Drawdown (IS)", isStats, isStats, oosStats, getMaxDrawdown, miningConfig),
-		getCorrelationFeature("RAR (IS)", isStats, isStats, oosStats, getRiskAdjusted, miningConfig),
+		getCorrelationFeature("Sharpe (IS)", isStats, isStats, oosStats, getSharpeRatio, miningConfig),
 		getCorrelationFeature("Returns (recent)", recentStats, isStats, oosStats, getReturns, miningConfig),
 		getCorrelationFeature("Max Drawdown (recent)", recentStats, isStats, oosStats, getMaxDrawdown, miningConfig),
-		getCorrelationFeature("RAR (recent)", recentStats, isStats, oosStats, getRiskAdjusted, miningConfig),
+		getCorrelationFeature("Sharpe (recent)", recentStats, isStats, oosStats, getSharpeRatio, miningConfig),
 	}
 	slices.SortFunc(features, func (a, b correlationFeature) int {
 		return cmp.Compare(math.Abs(b.coefficient), math.Abs(a.coefficient))
@@ -188,15 +188,15 @@ func addSegmentedReturnsStats(
 	equityCurve := backtest.equityCurve
 	returns := equityCurve.getReturns(start, end)
 	maxDrawdown := equityCurve.getMaxDrawdown(start, end)
-	riskAdjusted := equityCurve.getRiskAdjusted(start, end)
-	if math.IsNaN(returns) || math.IsNaN(maxDrawdown) || math.IsNaN(riskAdjusted) {
+	sharpe := equityCurve.getSharpe(start, end)
+	if math.IsNaN(returns) || math.IsNaN(maxDrawdown) || math.IsNaN(sharpe) {
 		log.Fatal("Encountered NaN value")
 	}
 	stats := segmentedReturnsStats{
 		index: index,
 		returns: returns,
 		maxDrawdown: maxDrawdown,
-		riskAdjusted: riskAdjusted,
+		sharpe: sharpe,
 	}
 	return stats, true
 }
@@ -232,7 +232,7 @@ func getCorrelationFeature(
 		}
 		oosSample := oosStats[sample.index]
 		xValue := get(sample)
-		yValue := oosSample.riskAdjusted
+		yValue := oosSample.sharpe
 		x = append(x, xValue)
 		y = append(y, yValue)
 	}

@@ -79,9 +79,10 @@ type backtestData struct {
 	weekdayReturns [daysPerWeek][]float64
 	optimizationReturns [daysPerWeek]deque.Deque[float64]
 	bannedDay *time.Weekday
-	riskAdjusted float64
-	riskAdjustedMin float64
-	riskAdjustedRecent float64
+	sharpe float64
+	minSharpe float64
+	recentSharpe float64
+	buyAndHoldSharpe float64
 	tradesRatio float64
 	cumulativeReturn float64
 	cumulativeMax float64
@@ -100,10 +101,10 @@ type backtestComparison struct {
 	completeBacktest backtestData
 }
 
-type riskAdjustedData struct {
-	riskAdjustedIS []float64
-	riskAdjustedRecentIS []float64
-	riskAdjustedOOS []float64
+type sharpeRatioData struct {
+	sharpeIS []float64
+	recentSharpeIS []float64
+	sharpeOOS []float64
 }
 
 func Backtest(yamlPath string) {
@@ -140,14 +141,14 @@ func Backtest(yamlPath string) {
 	fmt.Printf("Performed backtests in %.2f s\n", delta.Seconds())
 	buyAndHoldEquityCurve := getBuyAndHold(buyAndHoldSymbol, &backtestConfig.DateMin.Time, &backtestConfig.DateMax.Time, assetRecords, *backtestConfig.InitialCash)
 	buyAndHoldPerformance := buyAndHoldEquityCurve.getPerformance(backtestConfig.DateMin.Time, backtestConfig.DateMax.Time)
-	riskAdjustedData := getRiskAdjustedData(comparisons, buyAndHoldPerformance, backtestConfig)
-	printStats(riskAdjustedData, assetRecords, backtestConfig)
+	sharpeRatioData := getSharpeRatioData(comparisons, buyAndHoldPerformance, backtestConfig)
+	printStats(sharpeRatioData, assetRecords, backtestConfig)
 }
 
-func getRiskAdjustedData(comparisons []backtestComparison, buyAndHoldPerformance []float64, backtestConfig BacktestConfiguration) riskAdjustedData {
-	riskAdjustedIS := []float64{}
-	riskAdjustedRecentIS := []float64{}
-	riskAdjustedOOS := []float64{}
+func getSharpeRatioData(comparisons []backtestComparison, buyAndHoldPerformance []float64, backtestConfig BacktestConfiguration) sharpeRatioData {
+	sharpeIS := []float64{}
+	recentSharpeIS := []float64{}
+	sharpeOOS := []float64{}
 	for i, comparison := range comparisons {
 		backtest := comparison.completeBacktest
 		var conditionString string
@@ -180,23 +181,23 @@ func getRiskAdjustedData(comparisons []backtestComparison, buyAndHoldPerformance
 		)
 		performance := comparison.completeBacktest.equityCurve.getPerformance(backtestConfig.DateMin.Time, backtestConfig.DateMax.Time)
 		performanceCorrelation := stat.Correlation(performance, buyAndHoldPerformance, nil)
-		fmt.Printf("\tIS RAR:              %.3f\n", comparison.isBacktest.riskAdjusted)
-		fmt.Printf("\tIS RecRAR:           %.3f\n", comparison.isBacktest.riskAdjustedRecent)
-		fmt.Printf("\tOOS RAR:             %.3f\n", comparison.oosBacktest.riskAdjusted)
+		fmt.Printf("\tIS RAR:              %.3f\n", comparison.isBacktest.sharpe)
+		fmt.Printf("\tIS RecRAR:           %.3f\n", comparison.isBacktest.recentSharpe)
+		fmt.Printf("\tOOS RAR:             %.3f\n", comparison.oosBacktest.sharpe)
 		fmt.Printf("\tMarket correlation:  %.3f\n\n", performanceCorrelation)
-		riskAdjustedIS = append(riskAdjustedIS, comparison.isBacktest.riskAdjusted)
-		riskAdjustedRecentIS = append(riskAdjustedRecentIS, comparison.isBacktest.riskAdjustedRecent)
-		riskAdjustedOOS = append(riskAdjustedOOS, comparison.oosBacktest.riskAdjusted)
+		sharpeIS = append(sharpeIS, comparison.isBacktest.sharpe)
+		recentSharpeIS = append(recentSharpeIS, comparison.isBacktest.recentSharpe)
+		sharpeOOS = append(sharpeOOS, comparison.oosBacktest.sharpe)
 	}
-	return riskAdjustedData{
-		riskAdjustedIS: riskAdjustedIS,
-		riskAdjustedRecentIS: riskAdjustedRecentIS,
-		riskAdjustedOOS: riskAdjustedOOS,
+	return sharpeRatioData{
+		sharpeIS: sharpeIS,
+		recentSharpeIS: recentSharpeIS,
+		sharpeOOS: sharpeOOS,
 	}
 }
 
 func printStats(
-	riskAdjustedData riskAdjustedData,
+	sharpeData sharpeRatioData,
 	assetRecords []assetRecords,
 	backtestConfig BacktestConfiguration,
 ) {
@@ -204,37 +205,37 @@ func printStats(
 	fmt.Printf("IS period: %s to %s\n", getDateString(backtestConfig.DateMin.Time), getDateString(backtestConfig.DateSplit.Time))
 	fmt.Printf("OOS period: %s to %s\n", getDateString(backtestConfig.DateSplit.Time), getDateString(backtestConfig.DateMax.Time))
 	fmt.Printf("Number of strategies: %d\n\n", strategyCount)
-	riskAdjustedCorrelation := stat.Correlation(riskAdjustedData.riskAdjustedIS, riskAdjustedData.riskAdjustedOOS, nil)
-	riskAdjustedRecentCorrelation := stat.Correlation(riskAdjustedData.riskAdjustedRecentIS, riskAdjustedData.riskAdjustedOOS, nil)
-	fmt.Printf("PCC(IS RAR, OOS RAR):    %.3f\n", riskAdjustedCorrelation)
-	fmt.Printf("PCC(IS RecRAR, OOS RAR): %.3f\n\n", riskAdjustedRecentCorrelation)
+	sharpeCorrelation := stat.Correlation(sharpeData.sharpeIS, sharpeData.sharpeOOS, nil)
+	recentSharpeCorrelation := stat.Correlation(sharpeData.recentSharpeIS, sharpeData.sharpeOOS, nil)
+	fmt.Printf("PCC(IS Sharpe, OOS Sharpe):        %.3f\n", sharpeCorrelation)
+	fmt.Printf("PCC(recent IS Sharpe, OOS Sharpe): %.3f\n\n", recentSharpeCorrelation)
 	buyAndHoldReturnsIS := getBuyAndHold(buyAndHoldSymbol, &backtestConfig.DateMin.Time, &backtestConfig.DateSplit.Time, assetRecords, *backtestConfig.InitialCash)
 	buyAndHoldReturnsOOS := getBuyAndHold(buyAndHoldSymbol, &backtestConfig.DateSplit.Time, &backtestConfig.DateMax.Time, assetRecords, *backtestConfig.InitialCash)
-	buyAndHoldRiskAdjustedIS := buyAndHoldReturnsIS.getRiskAdjusted(backtestConfig.DateMin.Time, backtestConfig.DateSplit.Time)
-	buyAndHoldRiskAdjustedOOS := buyAndHoldReturnsOOS.getRiskAdjusted(backtestConfig.DateSplit.Time, backtestConfig.DateMax.Time)
-	fmt.Printf("Buy and Hold IS RAR:  %.3f\n", buyAndHoldRiskAdjustedIS)
-	fmt.Printf("Buy and Hold OOS RAR: %.3f\n\n", buyAndHoldRiskAdjustedOOS)
-	meanRiskAdjustedIS := stat.Mean(riskAdjustedData.riskAdjustedIS, nil)
-	meanRiskAdjustedRecentIS := stat.Mean(riskAdjustedData.riskAdjustedRecentIS, nil)
-	meanRiskAdjustedOOS := stat.Mean(riskAdjustedData.riskAdjustedOOS, nil)
-	fmt.Printf("Mean(IS RAR):         %.3f\n", meanRiskAdjustedIS)
-	fmt.Printf("Mean(IS RecRAR):      %.3f\n", meanRiskAdjustedRecentIS)
-	fmt.Printf("Mean(OOS RAR):        %.3f\n\n", meanRiskAdjustedOOS)
-	printClassifications(buyAndHoldRiskAdjustedOOS, riskAdjustedData.riskAdjustedOOS, strategyCount)
+	buyAndHoldSharpeIS := buyAndHoldReturnsIS.getSharpe(backtestConfig.DateMin.Time, backtestConfig.DateSplit.Time)
+	buyAndHoldSharpeOOS := buyAndHoldReturnsOOS.getSharpe(backtestConfig.DateSplit.Time, backtestConfig.DateMax.Time)
+	fmt.Printf("Buy and Hold IS Sharpe:  %.3f\n", buyAndHoldSharpeIS)
+	fmt.Printf("Buy and Hold OOS Sharpe: %.3f\n\n", buyAndHoldSharpeOOS)
+	meanSharpeIS := stat.Mean(sharpeData.sharpeIS, nil)
+	meanRecentSharpeIS := stat.Mean(sharpeData.recentSharpeIS, nil)
+	meanSharpeOOS := stat.Mean(sharpeData.sharpeOOS, nil)
+	fmt.Printf("Mean(IS Sharpe):         %.3f\n", meanSharpeIS)
+	fmt.Printf("Mean(recent IS Sharpe):  %.3f\n", meanRecentSharpeIS)
+	fmt.Printf("Mean(OOS Sharpe):        %.3f\n\n", meanSharpeOOS)
+	printClassifications(buyAndHoldSharpeOOS, sharpeData.sharpeOOS, strategyCount)
 }
 
 func printClassifications(
-	buyAndHoldRiskAdjustedOOS float64,
-	riskAdjustedOOS []float64,
+	buyAndHoldSharpeOOS float64,
+	sharpeOOS []float64,
 	strategyCount int,
 ) {
 	outperform := 0
 	underperform := 0
 	loss := 0
-	for _, riskAdjusted := range riskAdjustedOOS {
-		if riskAdjusted > buyAndHoldRiskAdjustedOOS {
+	for _, sharpe := range sharpeOOS {
+		if sharpe > buyAndHoldSharpeOOS {
 			outperform++
-		} else if riskAdjusted > 0 {
+		} else if sharpe > 0 {
 			underperform++
 		} else {
 			loss++
@@ -639,7 +640,7 @@ func processStopLoss(
 }
 
 func (backtest *backtestData) postProcess(
-	setRiskAdjusted bool,
+	setSharpe bool,
 	dateMin time.Time,
 	dateMax time.Time,
 	intradayRecords []FeatureRecord,
@@ -650,20 +651,20 @@ func (backtest *backtestData) postProcess(
 		backtest.equityCurve,
 		intradayRecords,
 	)
-	if setRiskAdjusted {
-		segments := []float64{}
+	if setSharpe {
+		sharpeSegments := []float64{}
 		delta := dateMax.Sub(dateMin)
-		segmentDuration := delta / riskAdjustedSegments
+		segmentDuration := delta / sharpeSegmentCount
 		segmentStart := dateMin
-		for range riskAdjustedSegments {
+		for range sharpeSegmentCount {
 			segmentEnd := segmentStart.Add(segmentDuration)
-			riskAdjusted := backtest.equityCurve.getRiskAdjusted(segmentStart, segmentEnd)
-			segments = append(segments, riskAdjusted)
+			sharpeRatio := backtest.equityCurve.getSharpe(segmentStart, segmentEnd)
+			sharpeSegments = append(sharpeSegments, sharpeRatio)
 			segmentStart = segmentEnd
 		}
-		backtest.riskAdjusted = backtest.equityCurve.getRiskAdjusted(dateMin, dateMax)
-		backtest.riskAdjustedMin = slices.Min(segments)
-		backtest.riskAdjustedRecent = segments[len(segments) - 1]
+		backtest.sharpe = backtest.equityCurve.getSharpe(dateMin, dateMax)
+		backtest.minSharpe = slices.Min(sharpeSegments)
+		backtest.recentSharpe = sharpeSegments[len(sharpeSegments) - 1]
 	}
 }
 

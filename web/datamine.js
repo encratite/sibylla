@@ -20,8 +20,8 @@ function renderDataMiningUI() {
 				tableContainer = createElement("div", container, "strategy");
 			}
 			const table = createElement("table", tableContainer);
-			const getRiskAdjusted = (description, property) => {
-				return [description, property.toFixed(3), true];
+			const getSharpeRatio = (description, property) => {
+				return [description, property.toFixed(2), true];
 			};
 			let strategyName = `${asset.symbol} Strategy #${index + 1}`;
 			const equityCurve = createElement("img", null, {
@@ -64,6 +64,7 @@ function renderDataMiningUI() {
 					["Holding Time", holdingTime, false],
 					["Options", optionsString, false],
 					["", "", false],
+					["", "", false],
 				];
 			} else {
 				const feature1 = features[0];
@@ -75,15 +76,17 @@ function renderDataMiningUI() {
 					["Entry", timeOfDay, false],
 					["Holding Time", holdingTime, false],
 					["Options", optionsString, false],
+					["", "", false],
 				];
 			}
 			const cells2 = [
 				["Returns", formatMoney(strategy.returns), true],
-				getRiskAdjusted("RAR", strategy.riskAdjusted),
-				getRiskAdjusted("MinRAR", strategy.riskAdjustedMin),
-				getRiskAdjusted("RecRAR", strategy.riskAdjustedRecent),
-				["Max Drawdown", getPercentage(strategy.maxDrawdown), true],
-				["Days Traded", getPercentage(strategy.tradesRatio), true],
+				getSharpeRatio("SR", strategy.sharpe),
+				getSharpeRatio("MinSR", strategy.minSharpe),
+				getSharpeRatio("RecSR", strategy.recentSharpe),
+				getSharpeRatio("Buy and Hold SR", strategy.buyAndHoldSharpe),
+				["Max Drawdown", getPercentage(strategy.maxDrawdown, 1), true],
+				["Days Traded", getPercentage(strategy.tradesRatio, 1), true],
 			];
 			const renderCell = (definition, row) => {
 				const description = definition[0];
@@ -184,15 +187,16 @@ function renderStopLoss(model, container) {
 
 function renderAssetStopLoss(results, index, container) {
 	const stopLoss = results.stopLoss;
+	const sharpeRatios = stopLoss.sharpeRatios;
 	const xValues = stopLoss.holdingTimes.map(x => `${x}h`);
 	const yValues = ["None"].concat(stopLoss.limits.map(x => getPercentage(x, 1)));
-	const zValues = stopLoss.riskAdjusted;
+	const zValues = sharpeRatios;
 	const textData = [];
-	for (let x = 0; x < stopLoss.riskAdjusted.length; x++) {
+	for (let x = 0; x < sharpeRatios.length; x++) {
 		const row = [];
-		for (let y = 0; y < stopLoss.riskAdjusted[x].length; y++) {
-			const value = stopLoss.riskAdjusted[x][y];
-			const formattedValue = value !== 0.0 ? value.toFixed(3) : "-";
+		for (let y = 0; y < sharpeRatios[x].length; y++) {
+			const value = sharpeRatios[x][y];
+			const formattedValue = value !== 0.0 ? value.toFixed(2) : "-";
 			row.push(formattedValue)
 		}
 		textData.push(row);
@@ -210,7 +214,7 @@ function renderAssetStopLoss(results, index, container) {
 	}];
 	const layout = {
 		title: {
-			text: `Risk-Adjusted Returns for ${results.symbol}`,
+			text: `Sharpe Ratios for ${results.symbol}`,
 			font: {
 				size: 18
 			},

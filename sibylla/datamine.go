@@ -17,7 +17,7 @@ import (
 const dataMiningScript = "datamine.js"
 const hoursPerYear = 365.25 * 24
 const tradingDaysPerYear = 252
-const riskAdjustedSegments = 3
+const sharpeSegmentCount = 3
 const daysPerWeek = 5
 const weekdayOptimizationBuffer = 35
 const recentWeekdayPlotSamples = 100
@@ -93,9 +93,10 @@ type StrategyMiningResult struct {
 	Features []StrategyFeature `json:"features"`
 	Exit string `json:"exit"`
 	Returns float64 `json:"returns"`
-	RiskAdjusted float64 `json:"riskAdjusted"`
-	RiskAdjustedMin float64 `json:"riskAdjustedMin"`
-	RiskAdjustedRecent float64 `json:"riskAdjustedRecent"`
+	Sharpe float64 `json:"sharpe"`
+	MinSharpe float64 `json:"minSharpe"`
+	RecentSharpe float64 `json:"recentSharpe"`
+	BuyAndHoldSharpe float64 `json:"buyAndHoldSharpe"`
 	MaxDrawdown float64 `json:"maxDrawdown"`
 	TradesRatio float64 `json:"tradesRatio"`
 	Plot string `json:"plot"`
@@ -124,7 +125,7 @@ type FeatureAnalysis struct {
 type StopLossAnalysis struct {
 	HoldingTimes []int `json:"holdingTimes"`
 	Limits []float64 `json:"limits"`
-	RiskAdjusted [][]float64 `json:"riskAdjusted"`
+	SharpeRatios [][]float64 `json:"sharpeRatios"`
 }
 
 type dataMiningTask struct {
@@ -265,7 +266,7 @@ func processResults(
 	assetStopLoss := map[string]StopLossAnalysis{}
 	for symbol := range assetBacktests {
 		slices.SortFunc(assetBacktests[symbol], func (a, b backtestData) int {
-			return compareFloat64(b.riskAdjustedMin, a.riskAdjustedMin)
+			return compareFloat64(b.minSharpe, a.minSharpe)
 		})
 		backtests := assetBacktests[symbol]
 		if miningConfig.EnableStopLoss {
@@ -278,8 +279,20 @@ func processResults(
 			backtests = backtests[:miningConfig.StrategyLimit]
 		}
 		slices.SortFunc(backtests, func (a, b backtestData) int {
-			return compareFloat64(b.riskAdjustedRecent, a.riskAdjustedRecent)
+			return compareFloat64(b.recentSharpe, a.recentSharpe)
 		})
+		buyAndHold := getBuyAndHold(
+			symbol,
+			&miningConfig.DateMin.Time,
+			&miningConfig.DateMax.Time,
+			assetRecords,
+			*miningConfig.InitialCash,
+		)
+		buyAndHoldSharpe := buyAndHold.getSharpe(miningConfig.DateMin.Time, miningConfig.DateMax.Time)
+		for i := range backtests {
+			backtest := &backtests[i]
+			backtest.buyAndHoldSharpe = buyAndHoldSharpe
+		}
 		assetBacktests[symbol] = backtests
 	}
 	dailyRecords := map[string][]DailyRecord{}
@@ -288,7 +301,14 @@ func processResults(
 		dailyRecords[key] = records.dailyRecords
 	}
 	clearDirectory(configuration.TempPath)
-	model := getDataMiningModel(assetBacktests, assetStopLoss, dailyRecords, assetRecords, analysis, miningConfig)
+	model := getDataMiningModel(
+		assetBacktests,
+		assetStopLoss,
+		dailyRecords,
+		assetRecords,
+		analysis,
+		miningConfig,
+	)
 	delta := time.Since(start)
 	fmt.Printf("Finished post-processing results in %.2f s\n", delta.Seconds())
 	return model
@@ -534,8 +554,8 @@ func postProcessBacktests(intradayRecords []FeatureRecord, backtests []backtestD
 			backtest.disable()
 			continue
 		}
-		setRiskAdjusted := !miningConfig.isCorrelation()
-		backtest.postProcess(setRiskAdjusted, miningConfig.DateMin.Time, miningConfig.DateMax.Time, intradayRecords)
+		setSharpe := !miningConfig.isCorrelation()
+		backtest.postProcess(setSharpe, miningConfig.DateMin.Time, miningConfig.DateMax.Time, intradayRecords)
 		if backtest.tradesRatio < miningConfig.TradesRatio {
 			backtest.disable()
 			continue
@@ -716,13 +736,13 @@ func getStopLossAnalysis(backtests []backtestData, miningConfig DataMiningConfig
 	returns := getReturnsAccessors()
 	holdingTimes := []int{}
 	holdingTimesIndices := map[int]int{}
-	riskAdjustedSamples := [][][]float64{}
+	sharpeRatioSamples := [][][]float64{}
 	stopLossCount := len(miningConfig.StopLoss) + 1
 	for i, r := range returns {
 		holdingTimesIndices[r.holdingTime] = i
 		holdingTimes = append(holdingTimes, r.holdingTime)
 		samples := make([][]float64, stopLossCount)
-		riskAdjustedSamples = append(riskAdjustedSamples, samples)
+		sharpeRatioSamples = append(sharpeRatioSamples, samples)
 	}
 	stopLossIndices := map[float64]int{}
 	for i, limit := range miningConfig.StopLoss {
@@ -743,25 +763,25 @@ func getStopLossAnalysis(backtests []backtestData, miningConfig DataMiningConfig
 		}
 		i := holdingTimeIndex
 		j := stopLossIndex
-		riskAdjustedSamples[i][j] = append(riskAdjustedSamples[i][j], backtest.riskAdjusted)
+		sharpeRatioSamples[i][j] = append(sharpeRatioSamples[i][j], backtest.sharpe)
 	}
-	riskAdjusted := [][]float64{}
+	sharpeRatios := [][]float64{}
 	for i := range stopLossCount {
 		row := []float64{}
 		for j := range returns {
-			samples := riskAdjustedSamples[j][i]
+			samples := sharpeRatioSamples[j][i]
 			mean := 0.0
 			if len(samples) > 0 {
 				mean = stat.Mean(samples, nil)
 			}
 			row = append(row, mean)
 		}
-		riskAdjusted = append(riskAdjusted, row)
+		sharpeRatios = append(sharpeRatios, row)
 	}
 	analysis := StopLossAnalysis{
 		HoldingTimes: holdingTimes,
 		Limits: miningConfig.StopLoss,
-		RiskAdjusted: riskAdjusted,
+		SharpeRatios: sharpeRatios,
 	}
 	return analysis
 }
@@ -785,9 +805,10 @@ func getStrategyMiningResult(
 		Features: []StrategyFeature{},
 		Exit: result.returns.name,
 		Returns: returns,
-		RiskAdjusted: result.riskAdjusted,
-		RiskAdjustedMin: result.riskAdjustedMin,
-		RiskAdjustedRecent: result.riskAdjustedRecent,
+		Sharpe: result.sharpe,
+		MinSharpe: result.minSharpe,
+		RecentSharpe: result.recentSharpe,
+		BuyAndHoldSharpe: result.buyAndHoldSharpe,
 		MaxDrawdown: result.drawdownMax,
 		TradesRatio: result.tradesRatio,
 		Plot: plotURL,

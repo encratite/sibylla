@@ -17,9 +17,9 @@ type weekdayOptimizationCategory struct {
 
 type weekdayOptimizationStats struct {
 	description string
-	riskAdjusted []float64
-	riskAdjustedMin []float64
-	riskAdjustedRecent []float64
+	sharpes []float64
+	minSharpes []float64
+	recentSharpes []float64
 }
 
 func analyzeWeekdayOptimizations(assetResults map[string][]backtestData) {
@@ -70,14 +70,14 @@ func (w *weekdayOptimizationCategory) print() {
 }
 
 func (w *weekdayOptimizationStats) submit(backtest *backtestData) {
-	w.riskAdjusted = append(w.riskAdjusted, backtest.riskAdjusted)
-	w.riskAdjustedMin = append(w.riskAdjustedMin, backtest.riskAdjustedMin)
-	w.riskAdjustedRecent = append(w.riskAdjustedRecent, backtest.riskAdjustedRecent)
+	w.sharpes = append(w.sharpes, backtest.sharpe)
+	w.minSharpes = append(w.minSharpes, backtest.minSharpe)
+	w.recentSharpes = append(w.recentSharpes, backtest.recentSharpe)
 }
 
 func (w *weekdayOptimizationStats) print(category string) {
-	riskAdjustedMean := stat.Mean(w.riskAdjusted, nil)
-	riskAdjustedMinMean := stat.Mean(w.riskAdjustedMin, nil)
-	riskAdjustedRecentMean := stat.Mean(w.riskAdjustedRecent, nil)
-	fmt.Printf("[%s] %s:\n\tmean RAR = %.5f, mean MinRAR = %.5f, mean RecRAR = %.5f\n", category, w.description, riskAdjustedMean, riskAdjustedMinMean, riskAdjustedRecentMean)
+	meanSharpe := stat.Mean(w.sharpes, nil)
+	meanMinSharpe := stat.Mean(w.minSharpes, nil)
+	meanRecentSharpe := stat.Mean(w.recentSharpes, nil)
+	fmt.Printf("[%s] %s:\n\tmean SR = %.5f, mean MinSR = %.5f, mean RecSR = %.5f\n", category, w.description, meanSharpe, meanMinSharpe, meanRecentSharpe)
 }

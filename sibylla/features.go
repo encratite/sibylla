@@ -55,7 +55,7 @@ func analyzeFeatureFrequency(assetResults map[string][]backtestData, miningConfi
 	}
 	for symbol := range assetResults {
 		slices.SortFunc(assetResults[symbol], func (a, b backtestData) int {
-			return compareFloat64(b.riskAdjustedMin, a.riskAdjustedMin)
+			return compareFloat64(b.minSharpe, a.minSharpe)
 		})
 		results := assetResults[symbol]
 		if len(results) > featureAnalysisLimit {
