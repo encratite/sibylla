@@ -193,15 +193,26 @@ function renderAssetStopLoss(results, index, container) {
 	const xValues = stopLoss.holdingTimes.map(x => `${x}h`);
 	const yValues = ["None"].concat(stopLoss.limits.map(x => getPercentage(x, 1)));
 	const zValues = sharpeRatios;
+	let minimum = null;
 	const textData = [];
 	for (let x = 0; x < sharpeRatios.length; x++) {
 		const row = [];
 		for (let y = 0; y < sharpeRatios[x].length; y++) {
 			const value = sharpeRatios[x][y];
+			if (minimum === null || value < minimum) {
+				minimum = value;
+			}
 			const formattedValue = value !== 0.0 ? value.toFixed(2) : "-";
 			row.push(formattedValue)
 		}
 		textData.push(row);
+	}
+	for (let x = 0; x < sharpeRatios.length; x++) {
+		for (let y = 0; y < sharpeRatios[x].length; y++) {
+			if (zValues[x][y] === 0.0) {
+				zValues[x][y] = minimum;
+			}
+		}
 	}
 	const data = [{
 		x: xValues,
