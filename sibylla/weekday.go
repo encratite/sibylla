@@ -79,5 +79,5 @@ func (w *weekdayOptimizationStats) print(category string) {
 	meanSharpe := stat.Mean(w.sharpes, nil)
 	meanMinSharpe := stat.Mean(w.minSharpes, nil)
 	meanRecentSharpe := stat.Mean(w.recentSharpes, nil)
-	fmt.Printf("[%s] %s:\n\tmean SR = %.5f, mean MinSR = %.5f, mean RecSR = %.5f\n", category, w.description, meanSharpe, meanMinSharpe, meanRecentSharpe)
+	fmt.Printf("[%s] %s:\n\tmean total SR = %.5f, mean min SR = %.5f, mean recent SR = %.5f\n", category, w.description, meanSharpe, meanMinSharpe, meanRecentSharpe)
 }

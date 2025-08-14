@@ -20,6 +20,7 @@ type Configuration struct {
 	TempPath string `yaml:"tempPath"`
 	IconPath string `yaml:"iconPath"`
 	ProfilerAddress *string `yaml:"profilerAddress"`
+	RiskFreeRatePath string `yaml:"riskFreeRatePath"`
 }
 
 const configurationPath = "configuration/configuration.yaml"
@@ -35,6 +36,7 @@ func loadConfiguration() {
 	}
 	loadBaseConfiguration()
 	loadAssets()
+	loadRiskFreeRate()
 	loadedConfiguration = true
 }
 

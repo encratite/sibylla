@@ -3,10 +3,13 @@ package sibylla
 import (
 	"log"
 	"math"
+	"strconv"
 	"time"
 
 	"gonum.org/v1/gonum/stat"
 )
+
+var riskFreeRate map[monthlyEquityKey]float64
 
 type equityCurveSample struct {
 	timestamp time.Time
@@ -161,8 +164,18 @@ func (d *equityCurveData) getSharpe(
 	dateMax time.Time,
 ) float64 {
 	performance := d.getPerformance(dateMin, dateMax)
-	riskFreeRate := 0.0
-	sharpeRatio := (stat.Mean(performance, nil) - riskFreeRate) / stat.StdDev(performance, nil)
+	riskFreeRateSamples := []float64{}
+	for date := dateMin; date.Before(dateMax); date = date.AddDate(0, 1, 0) {
+		key := newMonthlyEquityKey(date)
+		rate, exists := riskFreeRate[key]
+		if !exists {
+			log.Fatalf("Unable to find a risk free rate sample for %s", getDateString(date))
+		}
+		riskFreeRateSamples = append(riskFreeRateSamples, rate)
+	}
+	annualRate := stat.Mean(riskFreeRateSamples, nil) / 100.0
+	monthlyRate := math.Pow(1.0 + annualRate, 1.0 / monthsPerYear) - 1.0
+	sharpeRatio := (stat.Mean(performance, nil) - monthlyRate) / stat.StdDev(performance, nil)
 	annualizedSharpe := math.Sqrt(monthsPerYear) * sharpeRatio
 	return annualizedSharpe
 }
@@ -170,4 +183,25 @@ func (d *equityCurveData) getSharpe(
 func (d *equityCurveData) reset() {
 	d.samples = nil
 	d.endOfMonthCash = nil
+}
+
+func loadRiskFreeRate() {
+	if riskFreeRate != nil {
+		return
+	}
+	columns := []string{
+		"observation_date",
+		"TB3MS",
+	}
+	riskFreeRate = map[monthlyEquityKey]float64{}
+	readCsv(configuration.RiskFreeRatePath, columns, func (values []string) {
+		date := getDate(values[0])
+		key := newMonthlyEquityKey(date)
+		rateString := values[1]
+		rate, err := strconv.ParseFloat(rateString, 64)
+		if err != nil {
+			log.Fatalf("Failed to parse rate value \"%s\": %v", rateString, err)
+		}
+		riskFreeRate[key] = rate
+	})
 }

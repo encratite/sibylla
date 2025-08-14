@@ -81,9 +81,9 @@ function renderDataMiningUI() {
 			}
 			const cells2 = [
 				["Returns", formatMoney(strategy.returns), true],
-				getSharpeRatio("SR", strategy.sharpe),
-				getSharpeRatio("MinSR", strategy.minSharpe),
-				getSharpeRatio("RecSR", strategy.recentSharpe),
+				getSharpeRatio("Total SR", strategy.sharpe),
+				getSharpeRatio("Min SR", strategy.minSharpe),
+				getSharpeRatio("Recent SR", strategy.recentSharpe),
 				getSharpeRatio("Buy and Hold SR", strategy.buyAndHoldSharpe),
 				["Max Drawdown", getPercentage(strategy.maxDrawdown, 1), true],
 			];
