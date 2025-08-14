@@ -39,6 +39,7 @@ type DataMiningConfiguration struct {
 	TradesMin int `yaml:"tradesMin"`
 	TradesRatio float64 `yaml:"tradesRatio"`
 	Conditions ConditionConfiguration `yaml:"conditions"`
+	InitialCash *float64 `yaml:"initialCash"`
 	Leverage *float64 `yaml:"leverage"`
 	SingleFeature bool `yaml:"singleFeature"`
 	SeasonalityMode bool `yaml:"seasonalityMode"`
@@ -269,8 +270,8 @@ func processResults(
 		backtests := assetBacktests[symbol]
 		if miningConfig.EnableStopLoss {
 			limit := min(len(backtests), stopLossAnalysisLimit)
-			truncuatedBacktests := backtests[:limit]
-			analysis := getStopLossAnalysis(truncuatedBacktests, miningConfig)
+			truncatedBacktests := backtests[:limit]
+			analysis := getStopLossAnalysis(truncatedBacktests, miningConfig)
 			assetStopLoss[symbol] = analysis
 		}
 		if len(backtests) > miningConfig.StrategyLimit {
@@ -326,8 +327,9 @@ func executeSeasonalityMiningTask(task dataMiningTask, miningConfig DataMiningCo
 		}
 		for j := range backtests {
 			backtest := &backtests[j]
-			onConditionMatch(record, &task.seasonality.asset.asset, miningConfig.Leverage, false, backtest)
+			onConditionMatch(record, &task.seasonality.asset.asset, miningConfig.Leverage, backtest)
 		}
+		drawdownAndTradesCheck(backtests, miningConfig)
 	}
 	postProcessBacktests(records, backtests, miningConfig)
 	return backtests
@@ -351,26 +353,30 @@ func executeFeatureMiningTask(task dataMiningTask, miningConfig DataMiningConfig
 		if !stillWorking {
 			break
 		}
-		for j := range backtests {
-			backtest := &backtests[j]
-			if backtest.enabled {
-				drawdownExceeded := !miningConfig.isCorrelation() && backtest.drawdownMax > miningConfig.Drawdown
-				var enoughSamples, badPerformance bool
-				if miningConfig.StrategyFilter != nil {
-					enoughSamples = len(backtest.equityCurve) >= miningConfig.StrategyFilter.Trades
-					badPerformance = backtest.cumulativeReturn < miningConfig.StrategyFilter.Limit
-				} else {
-					enoughSamples = false
-					badPerformance = false
-				}
-				if drawdownExceeded || (enoughSamples && badPerformance) {
-					backtest.disable()
-				}
-			}
-		}
+		drawdownAndTradesCheck(backtests, miningConfig)
 	}
 	postProcessBacktests(condition1.asset.intradayRecords, backtests, miningConfig)
 	return backtests
+}
+
+func drawdownAndTradesCheck(backtests []backtestData, miningConfig DataMiningConfiguration) {
+	for i := range backtests {
+		backtest := &backtests[i]
+		if backtest.enabled {
+			drawdownExceeded := !miningConfig.isCorrelation() && backtest.drawdownMax > miningConfig.Drawdown
+			var enoughSamples, badPerformance bool
+			if miningConfig.StrategyFilter != nil {
+				enoughSamples = len(backtest.equityCurve.samples) >= miningConfig.StrategyFilter.Trades
+				badPerformance = backtest.cumulativeReturn < miningConfig.StrategyFilter.Limit
+			} else {
+				enoughSamples = false
+				badPerformance = false
+			}
+			if drawdownExceeded || (enoughSamples && badPerformance) {
+				backtest.disable()
+			}
+		}
+	}
 }
 
 func onDataMiningConditionMatch(
@@ -386,8 +392,7 @@ func onDataMiningConditionMatch(
 			continue
 		}
 		stillWorking = true
-		addTimestamp := miningConfig.isCorrelation()
-		onConditionMatch(record1, asset, miningConfig.Leverage, addTimestamp, backtest)
+		onConditionMatch(record1, asset, miningConfig.Leverage, backtest)
 	}
 	return stillWorking
 }
@@ -420,7 +425,14 @@ func initializeMiningBacktests(task dataMiningTask, miningConfig DataMiningConfi
 					for timeOfDay := miningConfig.TimeMin.Duration;
 						timeOfDay <= miningConfig.TimeMax.Duration;
 						timeOfDay += time.Duration(1) * time.Hour {
-						backtest := newBacktest(symbol, side, &timeOfDay, task.conditions, returns)
+						backtest := newBacktest(
+							symbol,
+							side,
+							&timeOfDay,
+							task.conditions,
+							returns,
+							*miningConfig.InitialCash,
+						)
 						backtest.optimizeWeekdays = optimizeWeekdays
 						if task.seasonality != nil {
 							backtest.seasonalityMode = true
@@ -498,7 +510,7 @@ func postProcessBacktests(intradayRecords []FeatureRecord, backtests []backtestD
 	}
 	for i := range backtests {
 		backtest := &backtests[i]
-		if len(backtest.equityCurve) < miningConfig.TradesMin {
+		if len(backtest.equityCurve.samples) < miningConfig.TradesMin {
 			backtest.disable()
 			continue
 		}
@@ -506,7 +518,7 @@ func postProcessBacktests(intradayRecords []FeatureRecord, backtests []backtestD
 			continue
 		}
 		years := map[int]struct{}{}
-		for _, sample := range backtest.equityCurve {
+		for _, sample := range backtest.equityCurve.samples {
 			year := sample.timestamp.Year()
 			years[year] = struct{}{}
 		}
@@ -523,8 +535,7 @@ func postProcessBacktests(intradayRecords []FeatureRecord, backtests []backtestD
 			continue
 		}
 		setRiskAdjusted := !miningConfig.isCorrelation()
-		preserveReturnsSamples := !setRiskAdjusted
-		backtest.postProcess(setRiskAdjusted, preserveReturnsSamples, miningConfig.DateMin.Time, miningConfig.DateMax.Time, intradayRecords)
+		backtest.postProcess(setRiskAdjusted, miningConfig.DateMin.Time, miningConfig.DateMax.Time, intradayRecords)
 		if backtest.tradesRatio < miningConfig.TradesRatio {
 			backtest.disable()
 			continue
@@ -534,12 +545,6 @@ func postProcessBacktests(intradayRecords []FeatureRecord, backtests []backtestD
 			continue
 		}
 	}
-}
-
-func getRiskAdjusted(returnsSamples []float64) float64 {
-	mean, stdDev := stat.MeanStdDev(returnsSamples, nil)
-	riskAdjusted := mean / stdDev
-	return riskAdjusted
 }
 
 func getAssetReturns(side PositionSide, timestamp time.Time, ticks int, enableFees bool, asset *Asset) float64 {
@@ -617,6 +622,9 @@ func (c *DataMiningConfiguration) validate() {
 	if c.TradesMin <= 0 {
 		log.Fatalf("Invalid number of minimum trades: %d", c.TradesMin)
 	}
+	if c.InitialCash == nil || *c.InitialCash < 1000 {
+		log.Fatalf("Invalid initial cash: %.1f", *c.InitialCash)
+	}
 	if c.Leverage != nil && *c.Leverage <= 0.0 {
 		log.Fatalf("Invalid leverage: %.1f", *c.Leverage)
 	}
@@ -689,7 +697,7 @@ func getDataMiningModel(
 			}
 			assetMiningResults.StopLoss = &stopLoss
 		}
-		buyAndHold, _ := getBuyAndHold(symbol, &miningConfig.DateMin.Time, &miningConfig.DateMax.Time, assetRecords)
+		buyAndHold := getBuyAndHold(symbol, &miningConfig.DateMin.Time, &miningConfig.DateMax.Time, assetRecords, *miningConfig.InitialCash)
 		for i, result := range backtests {
 			miningResult := getStrategyMiningResult(symbol, i + 1, result, buyAndHold)
 			assetMiningResults.Strategies = append(assetMiningResults.Strategies, miningResult)
@@ -762,9 +770,9 @@ func getStrategyMiningResult(
 	symbol string,
 	index int,
 	result backtestData,
-	buyAndHold []equityCurveSample,
+	buyAndHold equityCurveData,
 ) StrategyMiningResult {
-	equityCurve := result.equityCurve
+	equityCurve := result.equityCurve.samples
 	first := equityCurve[0]
 	last := equityCurve[len(equityCurve) - 1]
 	returns := last.cash - first.cash
@@ -811,11 +819,11 @@ func createStrategyPlots(
 	symbol string,
 	index int,
 	result backtestData,
-	buyAndHold []equityCurveSample,
+	buyAndHold equityCurveData,
 ) (string, string, string) {
 	plotFileName := fmt.Sprintf("%s.strategy%02d.png", symbol, index)
 	plotPath := filepath.Join(configuration.TempPath, plotFileName)
-	plotEquityCurve(result.equityCurve, buyAndHold, plotPath)
+	plotEquityCurve(result.equityCurve.samples, buyAndHold.samples, plotPath)
 	weekdayPlotFilename := fmt.Sprintf("%s.strategy%02d.weekday.png", symbol, index)
 	weekdayPlotPath := filepath.Join(configuration.TempPath, weekdayPlotFilename)
 	plotWeekdayReturns("Mean Return by Weekday (All)", result.weekdayReturns, weekdayPlotPath)
@@ -839,7 +847,7 @@ func createStrategyPlots(
 func getTradesRatio(
 	dateMin time.Time,
 	dateMax time.Time,
-	equityCurve []equityCurveSample,
+	equityCurve equityCurveData,
 	intradayRecords []FeatureRecord,
 ) float64 {
 	recordsFirst := intradayRecords[0].Timestamp
@@ -854,7 +862,7 @@ func getTradesRatio(
 	}
 	duration := end.Sub(start)
 	daysTradedMap := map[time.Time]struct{}{}
-	for _, record := range equityCurve {
+	for _, record := range equityCurve.samples {
 		date := getDateFromTime(record.timestamp)
 		daysTradedMap[date] = struct{}{}
 	}
@@ -866,8 +874,7 @@ func getTradesRatio(
 
 func (backtest *backtestData) disable() {
 	backtest.enabled = false
-	backtest.equityCurve = nil
-	backtest.returnsSamples = nil
+	backtest.equityCurve.reset()
 	for i := range backtest.weekdayReturns {
 		backtest.weekdayReturns[i] = nil
 	}

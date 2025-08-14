@@ -15,7 +15,6 @@ import (
 )
 
 const recentYears = 2
-const correlationMinimumSamples = 10
 
 type segmentedReturnsStats struct {
 	index int
@@ -137,9 +136,9 @@ func processOOSSegment(
 		log.Fatalf("Invalid parameters in processOOSSegment (DateMin = %s, start = %s, end = %s)", getDateString(miningConfig.DateMin.Time), getDateString(start), getDateString(end))
 	}
 	index := 0
-	for _, results := range taskResults {
-		for _, result := range results {
-			if !result.enabled {
+	for _, backtests := range taskResults {
+		for _, backtest := range backtests {
+			if !backtest.enabled {
 				continue
 			}
 			recentTime := start.AddDate(-recentYears, 0, 0)
@@ -147,8 +146,7 @@ func processOOSSegment(
 				miningConfig.DateMin.Time,
 				start,
 				index,
-				result.returnsSamples,
-				result.returnsTimestamps,
+				backtest,
 			)
 			if !isStatsExist {
 				continue
@@ -157,8 +155,7 @@ func processOOSSegment(
 				recentTime,
 				start,
 				index,
-				result.returnsSamples,
-				result.returnsTimestamps,
+				backtest,
 			)
 			if !recentStatsExist {
 				continue
@@ -167,8 +164,7 @@ func processOOSSegment(
 				start,
 				end,
 				index,
-				result.returnsSamples,
-				result.returnsTimestamps,
+				backtest,
 			)
 			if !oosStatsExist {
 				continue
@@ -187,15 +183,12 @@ func addSegmentedReturnsStats(
 	start time.Time,
 	end time.Time,
 	index int,
-	returnsSamples []float64,
-	returnsTimestamps []time.Time,
+	backtest backtestData,
 ) (segmentedReturnsStats, bool) {
-	matchingSamples := getReturnsSamples(start, end, returnsSamples, returnsTimestamps)
-	if len(matchingSamples) < correlationMinimumSamples {
-		return segmentedReturnsStats{}, false
-	}
-	returns, maxDrawdown := getReturnsDrawdown(matchingSamples)
-	riskAdjusted := getRiskAdjusted(matchingSamples)
+	equityCurve := backtest.equityCurve
+	returns := equityCurve.getReturns(start, end)
+	maxDrawdown := equityCurve.getMaxDrawdown(start, end)
+	riskAdjusted := equityCurve.getRiskAdjusted(start, end)
 	if math.IsNaN(returns) || math.IsNaN(maxDrawdown) || math.IsNaN(riskAdjusted) {
 		log.Fatal("Encountered NaN value")
 	}
@@ -206,33 +199,6 @@ func addSegmentedReturnsStats(
 		riskAdjusted: riskAdjusted,
 	}
 	return stats, true
-}
-
-func getReturnsSamples(start time.Time, end time.Time, returnsSamples []float64, returnsTimestamps []time.Time) []float64 {
-	if !start.Before(end) {
-		log.Fatalf("Invalid parameters in getReturnsSamples (start = %s, end = %s)", getDateString(start), getDateString(end))
-	}
-	output := []float64{}
-	for i := range returnsSamples {
-		t := returnsTimestamps[i]
-		if !start.After(t) && t.Before(end) {
-			output = append(output, returnsSamples[i])
-		}
-	}
-	return output
-}
-
-func getReturnsDrawdown(returnsSamples []float64) (float64, float64) {
-	returns := 1.0
-	maxReturns := returns
-	maxDrawdown := 0.0
-	for _, x := range returnsSamples {
-		returns *= 1.0 + x
-		maxReturns = max(maxReturns, returns)
-		drawdown := 1.0 - returns / maxReturns
-		maxDrawdown = max(maxDrawdown, drawdown)
-	}
-	return returns, maxDrawdown
 }
 
 func getCorrelationFeature(
