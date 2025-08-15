@@ -21,6 +21,8 @@ func main() {
 	dataMine := flag.String("data-mine", "", "Data mine strategies using the parameters from the specified YAML file")
 	correlation := flag.String("correlation", "", "Analyze the correlation between IS and OOS metrics of strategies data mined from the specified YAML file")
 	backtest := flag.String("backtest", "", "Backtest strategies defined in the specified YAML file")
+	strategyTxt := flag.String("txt", "", "Strategy .txt file to convert to YAML, also requires -yaml")
+	strategyYaml := flag.String("yaml", "", "Strategy YAML output path, also requires -txt")
 	flag.Parse()
 	if *generateAll {
 		sibylla.Generate(nil)
@@ -34,6 +36,8 @@ func main() {
 		sibylla.OOSCorrelation(*correlation)
 	} else if *backtest != "" {
 		sibylla.Backtest(*backtest)
+	} else if *strategyTxt != "" && *strategyYaml != "" {
+		sibylla.GenerateStrategyYaml(*strategyTxt, *strategyYaml)
 	} else {
 		flag.Usage()
 	}

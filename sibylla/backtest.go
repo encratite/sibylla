@@ -33,6 +33,7 @@ type BacktestStrategy struct {
 	Time SerializableDuration `yaml:"time"`
 	HoldingTime int `yaml:"holdingTime"`
 	Conditions []StrategyCondition `yaml:"conditions"`
+	StopLoss *float64 `yaml:"stopLoss"`
 }
 
 type StrategyCondition struct {
@@ -167,7 +168,11 @@ func getSharpeRatioData(comparisons []backtestComparison, buyAndHoldPerformance 
 		if backtest.side == SideShort {
 			side = "short"
 		}
-		format := "%d. %s, %s, %s, %dh\n"
+		stopLossString := ""
+		if backtest.enableStopLoss {
+			stopLossString = fmt.Sprintf(", SL %.1f%%", *backtest.stopLoss * 100.0)
+		}
+		format := "%d. %s, %s, %s, %dh%s\n"
 		fmt.Printf(
 			format,
 			i + 1,
@@ -175,6 +180,7 @@ func getSharpeRatioData(comparisons []backtestComparison, buyAndHoldPerformance 
 			side,
 			getTimeOfDayString(*backtest.timeOfDay),
 			backtest.returns.holdingTime,
+			stopLossString,
 		)
 		performance := comparison.completeBacktest.equityCurve.getPerformance(backtestConfig.DateMin.Time, backtestConfig.DateMax.Time)
 		performanceCorrelation := stat.Correlation(performance, buyAndHoldPerformance, nil)
@@ -521,6 +527,10 @@ func performBacktest(
 		returns,
 		*backtestConfig.InitialCash,
 	)
+	if strategy.StopLoss != nil {
+		backtest.enableStopLoss = true
+		backtest.stopLoss = strategy.StopLoss
+	}
 	if strategy.Weekday != nil {
 		backtest.weekday = &strategy.Weekday.Weekday
 	}

@@ -266,7 +266,7 @@ func processResults(
 	assetStopLoss := map[string]StopLossAnalysis{}
 	for symbol := range assetBacktests {
 		slices.SortFunc(assetBacktests[symbol], func (a, b backtestData) int {
-			return compareFloat64(b.minSharpe, a.minSharpe)
+			return compareFloat64(b.sharpe, a.sharpe)
 		})
 		backtests := assetBacktests[symbol]
 		if miningConfig.EnableStopLoss {
